@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
 using System.Drawing;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Data.SqlClient;
@@ -13,6 +14,9 @@ namespace ReportLineOAForDebtAndBranch
     {
         private string _connectionString = string.Empty;
         private bool _isConnected = false;
+
+        // Stores the full column data for filter support
+        private readonly List<(string Table, string Column, string DataType, string Nullable)> _columnCache = new();
 
         public MainForm()
         {
@@ -38,6 +42,7 @@ namespace ReportLineOAForDebtAndBranch
             _isConnected = false;
             UpdateConnectionStatus(false);
             lblConnInfo.Text = "Not connected";
+            ClearColumnBrowser();
         }
 
         private void TestAndConnect()
@@ -79,12 +84,17 @@ namespace ReportLineOAForDebtAndBranch
             SetExecutingState(true);
             tabResults.SelectedTab = tabPageResults;
 
+            // Run query and column browser fetch in parallel
+            var queryTask = Task.Run(() => ExecuteQuery(sql));
+            var columnsTask = FetchColumnsForQueryAsync(sql);
+
             try
             {
                 var sw = Stopwatch.StartNew();
-                var result = await Task.Run(() => ExecuteQuery(sql));
+                await Task.WhenAll(queryTask, columnsTask);
                 sw.Stop();
 
+                var result = await queryTask;
                 if (result.Tables.Count > 0 && result.Tables[0].Rows.Count > 0)
                 {
                     grid.DataSource = result.Tables[0];
@@ -98,11 +108,16 @@ namespace ReportLineOAForDebtAndBranch
 
                 AppendMessage($"Query executed in {sw.ElapsedMilliseconds} ms.", Color.DodgerBlue);
                 lblExecTime.Text = $"{sw.ElapsedMilliseconds} ms";
+
+                PopulateColumnBrowser(await columnsTask, sql);
             }
             catch (Exception ex)
             {
                 tabResults.SelectedTab = tabPageMessages;
                 AppendMessage($"Error: {ex.Message}", Color.Red);
+
+                // Still try to show columns even if query failed
+                try { PopulateColumnBrowser(await columnsTask, sql); } catch { }
             }
             finally
             {
@@ -135,6 +150,7 @@ namespace ReportLineOAForDebtAndBranch
             SetExecutingState(true);
             tabResults.SelectedTab = tabPageMessages;
 
+            var columnsTask = FetchColumnsForQueryAsync(sql);
             try
             {
                 var sw = Stopwatch.StartNew();
@@ -150,10 +166,13 @@ namespace ReportLineOAForDebtAndBranch
                 AppendMessage($"{rows} row(s) affected  ({sw.ElapsedMilliseconds} ms).", Color.DodgerBlue);
                 lblRowCount.Text = $"{rows} row(s) affected";
                 lblExecTime.Text = $"{sw.ElapsedMilliseconds} ms";
+
+                PopulateColumnBrowser(await columnsTask, sql);
             }
             catch (Exception ex)
             {
                 AppendMessage($"Error: {ex.Message}", Color.Red);
+                try { PopulateColumnBrowser(await columnsTask, sql); } catch { }
             }
             finally
             {
@@ -161,11 +180,179 @@ namespace ReportLineOAForDebtAndBranch
             }
         }
 
+        // ── Column Browser ──────────────────────────────────────────────────────
+
+        private static List<string> ParseTableNames(string sql)
+        {
+            var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Match: FROM TableName / JOIN TableName / FROM [schema].[Table] / FROM schema.Table
+            var pattern = new Regex(
+                @"(?:FROM|JOIN)\s+(\[?[\w]+\]?\.)?(\[?([\w]+)\]?)",
+                RegexOptions.IgnoreCase | RegexOptions.Multiline);
+
+            foreach (Match m in pattern.Matches(sql))
+            {
+                string name = m.Groups[3].Value.Trim('[', ']');
+                // Skip SQL keywords that can appear after FROM/JOIN
+                if (!string.Equals(name, "SELECT", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(name, "WITH", StringComparison.OrdinalIgnoreCase))
+                    tables.Add(name);
+            }
+
+            return new List<string>(tables);
+        }
+
+        private async Task<List<(string Table, string Column, string DataType, string Nullable)>>
+            FetchColumnsForQueryAsync(string sql)
+        {
+            var tableNames = ParseTableNames(sql);
+            if (tableNames.Count == 0 || !_isConnected)
+                return new List<(string, string, string, string)>();
+
+            return await Task.Run(() => FetchColumns(tableNames));
+        }
+
+        private List<(string Table, string Column, string DataType, string Nullable)>
+            FetchColumns(List<string> tableNames)
+        {
+            var result = new List<(string, string, string, string)>();
+
+            // Build parameterised IN list
+            var paramNames = new List<string>();
+            for (int i = 0; i < tableNames.Count; i++)
+                paramNames.Add($"@t{i}");
+
+            string inClause = string.Join(",", paramNames);
+            string query = $@"
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+FROM   INFORMATION_SCHEMA.COLUMNS
+WHERE  TABLE_NAME IN ({inClause})
+ORDER  BY TABLE_NAME, ORDINAL_POSITION";
+
+            using var conn = new SqlConnection(_connectionString);
+            conn.Open();
+            using var cmd = new SqlCommand(query, conn) { CommandTimeout = 30 };
+            for (int i = 0; i < tableNames.Count; i++)
+                cmd.Parameters.AddWithValue(paramNames[i], tableNames[i]);
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                result.Add((reader.GetString(0), reader.GetString(1),
+                            reader.GetString(2), reader.GetString(3)));
+
+            return result;
+        }
+
+        private void PopulateColumnBrowser(
+            List<(string Table, string Column, string DataType, string Nullable)> columns,
+            string sql)
+        {
+            if (InvokeRequired)
+            {
+                Invoke(() => PopulateColumnBrowser(columns, sql));
+                return;
+            }
+
+            _columnCache.Clear();
+            _columnCache.AddRange(columns);
+
+            treeColumns.BeginUpdate();
+            treeColumns.Nodes.Clear();
+            txtTableFilter.Clear();
+
+            if (columns.Count == 0)
+            {
+                var tables = ParseTableNames(sql);
+                lblColumnBrowserStatus.Text = tables.Count == 0
+                    ? "No tables found in query"
+                    : $"No columns found for: {string.Join(", ", tables)}";
+                treeColumns.EndUpdate();
+                return;
+            }
+
+            BuildTreeNodes(columns);
+            treeColumns.ExpandAll();
+            treeColumns.EndUpdate();
+
+            var uniqueTables = new HashSet<string>();
+            foreach (var (t, _, _, _) in columns) uniqueTables.Add(t);
+            lblColumnBrowserStatus.Text = $"{uniqueTables.Count} table(s)  |  {columns.Count} column(s)";
+        }
+
+        private void BuildTreeNodes(
+            IEnumerable<(string Table, string Column, string DataType, string Nullable)> columns)
+        {
+            string? currentTable = null;
+            TreeNode? tableNode = null;
+
+            foreach (var (table, column, dataType, nullable) in columns)
+            {
+                if (table != currentTable)
+                {
+                    tableNode = new TreeNode($"[{table}]")
+                    {
+                        ForeColor = Color.FromArgb(86, 156, 214),
+                        NodeFont = new Font("Consolas", 9f, FontStyle.Bold)
+                    };
+                    treeColumns.Nodes.Add(tableNode);
+                    currentTable = table;
+                }
+
+                string nullMark = nullable == "YES" ? "?" : "";
+                var colNode = new TreeNode($"{column}  ({dataType}{nullMark})")
+                {
+                    ForeColor = Color.FromArgb(212, 212, 212),
+                    Tag = column   // store raw name for double-click insert
+                };
+                tableNode!.Nodes.Add(colNode);
+            }
+        }
+
+        private void ClearColumnBrowser()
+        {
+            _columnCache.Clear();
+            treeColumns.Nodes.Clear();
+            lblColumnBrowserStatus.Text = "Execute a query to see columns";
+        }
+
+        // Filter tree as user types
+        private void txtTableFilter_TextChanged(object sender, EventArgs e)
+        {
+            string filter = txtTableFilter.Text.Trim();
+
+            treeColumns.BeginUpdate();
+            treeColumns.Nodes.Clear();
+
+            var filtered = string.IsNullOrEmpty(filter)
+                ? _columnCache
+                : _columnCache.FindAll(c =>
+                    c.Column.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    c.Table.Contains(filter, StringComparison.OrdinalIgnoreCase));
+
+            if (filtered.Count > 0)
+                BuildTreeNodes(filtered);
+
+            treeColumns.ExpandAll();
+            treeColumns.EndUpdate();
+        }
+
+        // Double-click a column node → insert column name at cursor in query editor
+        private void treeColumns_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
+        {
+            if (e.Node.Tag is string colName)
+            {
+                int sel = rtbQuery.SelectionStart;
+                rtbQuery.Text = rtbQuery.Text.Insert(sel, colName);
+                rtbQuery.SelectionStart = sel + colName.Length;
+                rtbQuery.Focus();
+            }
+        }
+
         // ── Helpers ─────────────────────────────────────────────────────────────
 
         private string GetActiveQuery()
         {
-            // If user selected text, run only the selection
             string selected = rtbQuery.SelectedText.Trim();
             return string.IsNullOrEmpty(selected) ? rtbQuery.Text.Trim() : selected;
         }
@@ -206,11 +393,11 @@ namespace ReportLineOAForDebtAndBranch
             rtbMessages.Clear();
             lblRowCount.Text = string.Empty;
             lblExecTime.Text = string.Empty;
+            ClearColumnBrowser();
         }
 
         private void btnClearQuery_Click(object sender, EventArgs e) => rtbQuery.Clear();
 
-        // Ctrl+Enter shortcut in query box
         private void rtbQuery_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Control && e.KeyCode == Keys.Enter)

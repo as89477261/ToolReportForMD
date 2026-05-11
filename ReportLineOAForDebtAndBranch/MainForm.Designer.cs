@@ -14,6 +14,9 @@ namespace ReportLineOAForDebtAndBranch
         private Button btnConnect;
         private Button btnDisconnect;
 
+        // Outer splitter (left = query/results | right = column browser)
+        private SplitContainer splitOuter;
+
         // Query area
         private RichTextBox rtbQuery;
         private Panel pnlQueryToolbar;
@@ -22,7 +25,7 @@ namespace ReportLineOAForDebtAndBranch
         private Button btnClearQuery;
         private Label lblQueryHint;
 
-        // Splitter
+        // Inner splitter (top = query | bottom = results)
         private SplitContainer splitMain;
 
         // Result tabs
@@ -36,6 +39,13 @@ namespace ReportLineOAForDebtAndBranch
         private Panel pnlQueryToolbar2;
         private Button btnClearResults;
         private Button btnExportCsv;
+
+        // ── Column Browser (right panel) ─────────────────────────────────────────
+        private Panel pnlColumnBrowser;
+        private Label lblColumnBrowserHeader;
+        private Label lblColumnBrowserStatus;
+        private TreeView treeColumns;
+        private TextBox txtTableFilter;
 
         // Status bar
         private StatusStrip statusStrip;
@@ -113,7 +123,7 @@ namespace ReportLineOAForDebtAndBranch
 
             pnlToolbar.Controls.AddRange(new Control[] { picStatus, btnConnect, btnDisconnect, lblConnInfo });
 
-            // ── Main SplitContainer ──────────────────────────────────────────────
+            // ── Inner SplitContainer (query top / results bottom) ────────────────
             splitMain = new SplitContainer
             {
                 Dock = DockStyle.Fill,
@@ -303,6 +313,83 @@ namespace ReportLineOAForDebtAndBranch
             splitMain.Panel2.Controls.Add(tabResults);
             splitMain.Panel2.Controls.Add(pnlQueryToolbar2);
 
+            // ── Column Browser (right panel) ─────────────────────────────────────
+            pnlColumnBrowser = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(30, 30, 30)
+            };
+
+            lblColumnBrowserHeader = new Label
+            {
+                Text = "Column Browser",
+                Dock = DockStyle.Top,
+                Height = 28,
+                TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
+                Padding = new Padding(6, 0, 0, 0),
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(200, 200, 200),
+                BackColor = Color.FromArgb(45, 45, 48)
+            };
+
+            txtTableFilter = new TextBox
+            {
+                Dock = DockStyle.Top,
+                Height = 24,
+                Font = new Font("Segoe UI", 9f),
+                BackColor = Color.FromArgb(60, 60, 60),
+                ForeColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                PlaceholderText = "Filter columns..."
+            };
+            txtTableFilter.TextChanged += txtTableFilter_TextChanged;
+
+            lblColumnBrowserStatus = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 20,
+                Text = "Execute a query to see columns",
+                Font = new Font("Segoe UI", 8f, FontStyle.Italic),
+                ForeColor = Color.FromArgb(120, 120, 120),
+                TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
+                Padding = new Padding(6, 0, 0, 0),
+                BackColor = Color.FromArgb(30, 30, 30)
+            };
+
+            treeColumns = new TreeView
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(30, 30, 30),
+                ForeColor = Color.FromArgb(212, 212, 212),
+                BorderStyle = BorderStyle.None,
+                Font = new Font("Consolas", 9f),
+                ShowLines = true,
+                ShowPlusMinus = true,
+                FullRowSelect = true,
+                HideSelection = false
+            };
+            treeColumns.NodeMouseDoubleClick += treeColumns_NodeMouseDoubleClick;
+
+            // stack: header → filter → status → tree (fill)
+            pnlColumnBrowser.Controls.Add(treeColumns);
+            pnlColumnBrowser.Controls.Add(lblColumnBrowserStatus);
+            pnlColumnBrowser.Controls.Add(txtTableFilter);
+            pnlColumnBrowser.Controls.Add(lblColumnBrowserHeader);
+
+            // ── Outer SplitContainer (left = editor+results | right = browser) ───
+            splitOuter = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                SplitterDistance = 780,
+                Panel1MinSize = 400,
+                Panel2MinSize = 180,
+                BackColor = Color.FromArgb(30, 30, 30)
+            };
+
+            splitOuter.Panel1.Controls.Add(splitMain);
+            splitOuter.Panel2.Controls.Add(pnlColumnBrowser);
+
             // ── Status bar ───────────────────────────────────────────────────────
             statusStrip = new StatusStrip { BackColor = Color.FromArgb(0, 122, 204) };
 
@@ -315,7 +402,7 @@ namespace ReportLineOAForDebtAndBranch
             {
                 ForeColor = Color.White,
                 Spring = true,
-                TextAlign = ContentAlignment.MiddleCenter,
+                TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
                 Font = new Font("Segoe UI", 9f)
             };
             lblExecTime = new ToolStripStatusLabel
@@ -339,12 +426,12 @@ namespace ReportLineOAForDebtAndBranch
             // ── Assemble form ────────────────────────────────────────────────────
             SuspendLayout();
             Text = "SQL Query Tool";
-            Size = new Size(1100, 720);
-            MinimumSize = new Size(700, 500);
+            Size = new Size(1280, 720);
+            MinimumSize = new Size(800, 500);
             BackColor = Color.FromArgb(30, 30, 30);
             StartPosition = FormStartPosition.CenterScreen;
 
-            Controls.Add(splitMain);
+            Controls.Add(splitOuter);
             Controls.Add(pnlToolbar);
             Controls.Add(statusStrip);
             ResumeLayout(false);
