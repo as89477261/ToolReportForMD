@@ -24,7 +24,8 @@ namespace ReportLineOAForDebtAndBranch
             UpdateConnectionStatus(false);
             Load += (s, e) =>
             {
-                // Set after form has real dimensions
+                splitOuter.Panel1MinSize = 400;
+                splitOuter.Panel2MinSize = 180;
                 splitOuter.SplitterDistance = (int)(splitOuter.Width * 0.72);
             };
         }

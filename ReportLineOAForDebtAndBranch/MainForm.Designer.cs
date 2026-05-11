@@ -381,11 +381,8 @@ namespace ReportLineOAForDebtAndBranch
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
-                Panel1MinSize = 400,
-                Panel2MinSize = 180,
                 BackColor = Color.FromArgb(30, 30, 30)
             };
-            splitOuter.SplitterMoved += (s, e) => { }; // placeholder
 
             splitOuter.Panel1.Controls.Add(splitMain);
             splitOuter.Panel2.Controls.Add(pnlColumnBrowser);
