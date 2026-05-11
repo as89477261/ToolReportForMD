@@ -6,8 +6,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>SqlQueryTool</AssemblyName>
-    <RootNamespace>SqlQueryTool</RootNamespace>
+    <AssemblyName>ReportLineOAForDebtAndBranch</AssemblyName>
+    <RootNamespace>ReportLineOAForDebtAndBranch</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

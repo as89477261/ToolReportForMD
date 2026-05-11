@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using Microsoft.Data.SqlClient;
 
-namespace SqlQueryTool
+namespace ReportLineOAForDebtAndBranch
 {
     public class ConnectionDialog : Form
     {

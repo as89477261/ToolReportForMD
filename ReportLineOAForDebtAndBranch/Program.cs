@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Forms;
 
-namespace SqlQueryTool
+namespace ReportLineOAForDebtAndBranch
 {
     internal static class Program
     {

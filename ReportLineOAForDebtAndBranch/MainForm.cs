@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Data.SqlClient;
 
-namespace SqlQueryTool
+namespace ReportLineOAForDebtAndBranch
 {
     public partial class MainForm : Form
     {
