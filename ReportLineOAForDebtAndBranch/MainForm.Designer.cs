@@ -7,51 +7,35 @@ namespace ReportLineOAForDebtAndBranch
     {
         private System.ComponentModel.IContainer components = null;
 
-        // Top toolbar controls
+        // Top toolbar
         private Panel pnlToolbar;
         private Panel picStatus;
         private Label lblConnInfo;
         private Button btnConnect;
         private Button btnDisconnect;
 
-        // Outer splitter (left = query/results | right = column browser)
-        private SplitContainer splitOuter;
-
-        // Query area
-        private RichTextBox rtbQuery;
+        // Query toolbar
         private Panel pnlQueryToolbar;
         private Button btnExecute;
         private Button btnExecuteNonQuery;
-        private Button btnClearQuery;
-        private Label lblQueryHint;
+        private Button btnNewTab;
 
-        // Inner splitter (top = query | bottom = results)
-        private SplitContainer splitMain;
+        // Query tabs
+        private TabControl tabQueries;
 
-        // Result tabs
-        private TabControl tabResults;
-        private TabPage tabPageResults;
-        private TabPage tabPageMessages;
-        private DataGridView grid;
-        private RichTextBox rtbMessages;
+        // Outer splitter (left = tabs | right = column browser)
+        private SplitContainer splitOuter;
 
-        // Bottom toolbar
-        private Panel pnlQueryToolbar2;
-        private Button btnClearResults;
-        private Button btnExportCsv;
-
-        // ── Column Browser (right panel) ─────────────────────────────────────────
+        // Column browser
         private Panel pnlColumnBrowser;
         private Label lblColumnBrowserHeader;
+        private TextBox txtTableSearch;
         private Label lblColumnBrowserStatus;
         private TreeView treeColumns;
-        private TextBox txtTableFilter;
 
         // Status bar
         private StatusStrip statusStrip;
         private ToolStripStatusLabel lblStatus;
-        private ToolStripStatusLabel lblRowCount;
-        private ToolStripStatusLabel lblExecTime;
         private ToolStripProgressBar progressBar;
 
         protected override void Dispose(bool disposing)
@@ -69,45 +53,34 @@ namespace ReportLineOAForDebtAndBranch
             {
                 Dock = DockStyle.Top,
                 Height = 44,
-                BackColor = Color.FromArgb(37, 37, 38),
-                Padding = new Padding(6, 6, 6, 6)
+                BackColor = Color.FromArgb(37, 37, 38)
             };
 
             picStatus = new Panel
             {
-                Width = 14,
-                Height = 14,
+                Width = 14, Height = 14,
                 BackColor = Color.Gray,
-                Location = new Point(10, 15),
+                Location = new Point(10, 15)
             };
             picStatus.Region = System.Drawing.Region.FromHrgn(
                 CreateRoundRectRgn(0, 0, 14, 14, 14, 14));
 
             btnConnect = new Button
             {
-                Text = "Connect",
-                Width = 90,
-                Height = 30,
-                Location = new Point(30, 7),
+                Text = "Connect", Width = 90, Height = 30, Location = new Point(30, 7),
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(0, 122, 204),
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9f, FontStyle.Regular)
+                BackColor = Color.FromArgb(0, 122, 204), ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f)
             };
             btnConnect.FlatAppearance.BorderSize = 0;
             btnConnect.Click += btnConnect_Click;
 
             btnDisconnect = new Button
             {
-                Text = "Disconnect",
-                Width = 90,
-                Height = 30,
-                Location = new Point(128, 7),
+                Text = "Disconnect", Width = 90, Height = 30, Location = new Point(128, 7),
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(70, 70, 72),
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9f),
-                Enabled = false
+                BackColor = Color.FromArgb(70, 70, 72), ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f), Enabled = false
             };
             btnDisconnect.FlatAppearance.BorderSize = 0;
             btnDisconnect.Click += btnDisconnect_Click;
@@ -117,203 +90,71 @@ namespace ReportLineOAForDebtAndBranch
                 Text = "Not connected",
                 ForeColor = Color.FromArgb(180, 180, 180),
                 Font = new Font("Segoe UI", 9f),
-                AutoSize = true,
-                Location = new Point(228, 13)
+                AutoSize = true, Location = new Point(228, 13)
             };
 
             pnlToolbar.Controls.AddRange(new Control[] { picStatus, btnConnect, btnDisconnect, lblConnInfo });
 
-            // ── Inner SplitContainer (query top / results bottom) ────────────────
-            splitMain = new SplitContainer
-            {
-                Dock = DockStyle.Fill,
-                Orientation = Orientation.Horizontal,
-                SplitterDistance = 220,
-                Panel1MinSize = 80,
-                Panel2MinSize = 80,
-                BackColor = Color.FromArgb(30, 30, 30)
-            };
-
-            // ── Query panel toolbar ──────────────────────────────────────────────
+            // ── Query toolbar ────────────────────────────────────────────────────
             pnlQueryToolbar = new Panel
             {
                 Dock = DockStyle.Top,
                 Height = 38,
-                BackColor = Color.FromArgb(45, 45, 48),
-                Padding = new Padding(4, 4, 4, 4)
+                BackColor = Color.FromArgb(45, 45, 48)
             };
 
             btnExecute = new Button
             {
-                Text = "▶  Execute (Ctrl+Enter)",
-                Height = 28,
-                Width = 175,
-                Location = new Point(4, 5),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(0, 122, 204),
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9f),
-                Enabled = false
+                Text = "▶  Execute (Ctrl+Enter)", Height = 28, Width = 175,
+                Location = new Point(4, 5), FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(0, 122, 204), ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f), Enabled = false
             };
             btnExecute.FlatAppearance.BorderSize = 0;
             btnExecute.Click += btnExecute_Click;
 
             btnExecuteNonQuery = new Button
             {
-                Text = "⚡ Non-Query",
-                Height = 28,
-                Width = 110,
-                Location = new Point(185, 5),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(80, 60, 20),
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9f),
-                Enabled = false
+                Text = "⚡ Non-Query", Height = 28, Width = 110,
+                Location = new Point(185, 5), FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(80, 60, 20), ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f), Enabled = false
             };
             btnExecuteNonQuery.FlatAppearance.BorderSize = 0;
             btnExecuteNonQuery.Click += btnExecuteNonQuery_Click;
 
-            btnClearQuery = new Button
+            btnNewTab = new Button
             {
-                Text = "Clear",
-                Height = 28,
-                Width = 65,
-                Location = new Point(301, 5),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(70, 70, 72),
-                ForeColor = Color.White,
+                Text = "+ New Tab", Height = 28, Width = 90,
+                Location = new Point(305, 5), FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(55, 55, 58), ForeColor = Color.FromArgb(180, 180, 180),
                 Font = new Font("Segoe UI", 9f)
             };
-            btnClearQuery.FlatAppearance.BorderSize = 0;
-            btnClearQuery.Click += btnClearQuery_Click;
+            btnNewTab.FlatAppearance.BorderSize = 0;
+            btnNewTab.Click += btnNewTab_Click;
 
-            lblQueryHint = new Label
+            var lblHint = new Label
             {
-                Text = "Tip: Select text to run partial query",
-                ForeColor = Color.FromArgb(130, 130, 130),
+                Text = "Tip: Select text to run partial query  |  Ctrl+W = close tab",
+                ForeColor = Color.FromArgb(110, 110, 110),
                 Font = new Font("Segoe UI", 8f, FontStyle.Italic),
-                AutoSize = true,
-                Location = new Point(375, 10)
+                AutoSize = true, Location = new Point(402, 11)
             };
 
             pnlQueryToolbar.Controls.AddRange(new Control[]
             {
-                btnExecute, btnExecuteNonQuery, btnClearQuery, lblQueryHint
+                btnExecute, btnExecuteNonQuery, btnNewTab, lblHint
             });
 
-            // ── Query editor ─────────────────────────────────────────────────────
-            rtbQuery = new RichTextBox
-            {
-                Dock = DockStyle.Fill,
-                Font = new Font("Consolas", 11f),
-                BackColor = Color.FromArgb(30, 30, 30),
-                ForeColor = Color.FromArgb(212, 212, 212),
-                BorderStyle = BorderStyle.None,
-                AcceptsTab = true,
-                ScrollBars = RichTextBoxScrollBars.Both,
-                WordWrap = false
-            };
-            rtbQuery.KeyDown += rtbQuery_KeyDown;
-
-            splitMain.Panel1.Controls.Add(rtbQuery);
-            splitMain.Panel1.Controls.Add(pnlQueryToolbar);
-
-            // ── Results area ─────────────────────────────────────────────────────
-            pnlQueryToolbar2 = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 38,
-                BackColor = Color.FromArgb(45, 45, 48),
-                Padding = new Padding(4, 4, 4, 4)
-            };
-
-            btnClearResults = new Button
-            {
-                Text = "Clear",
-                Height = 28,
-                Width = 65,
-                Location = new Point(4, 5),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(70, 70, 72),
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9f)
-            };
-            btnClearResults.FlatAppearance.BorderSize = 0;
-            btnClearResults.Click += btnClearResults_Click;
-
-            btnExportCsv = new Button
-            {
-                Text = "Export CSV",
-                Height = 28,
-                Width = 90,
-                Location = new Point(76, 5),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(70, 70, 72),
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9f)
-            };
-            btnExportCsv.FlatAppearance.BorderSize = 0;
-            btnExportCsv.Click += btnExportCsv_Click;
-
-            pnlQueryToolbar2.Controls.AddRange(new Control[] { btnClearResults, btnExportCsv });
-
-            // DataGridView
-            grid = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.DisplayedCells,
-                BackgroundColor = Color.FromArgb(30, 30, 30),
-                GridColor = Color.FromArgb(60, 60, 60),
-                BorderStyle = BorderStyle.None,
-                ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                RowHeadersWidth = 30,
-                Font = new Font("Consolas", 9.5f)
-            };
-            grid.DefaultCellStyle.BackColor = Color.FromArgb(30, 30, 30);
-            grid.DefaultCellStyle.ForeColor = Color.FromArgb(212, 212, 212);
-            grid.DefaultCellStyle.SelectionBackColor = Color.FromArgb(0, 122, 204);
-            grid.DefaultCellStyle.SelectionForeColor = Color.White;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(45, 45, 48);
-            grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(200, 200, 200);
-            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
-            grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(37, 37, 38);
-            grid.RowHeadersDefaultCellStyle.BackColor = Color.FromArgb(45, 45, 48);
-            grid.EnableHeadersVisualStyles = false;
-
-            // Messages box
-            rtbMessages = new RichTextBox
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                Font = new Font("Consolas", 10f),
-                BackColor = Color.FromArgb(20, 20, 20),
-                ForeColor = Color.FromArgb(212, 212, 212),
-                BorderStyle = BorderStyle.None,
-                ScrollBars = RichTextBoxScrollBars.Vertical
-            };
-
-            // Tabs
-            tabPageResults = new TabPage("Results");
-            tabPageResults.Controls.Add(grid);
-
-            tabPageMessages = new TabPage("Messages");
-            tabPageMessages.Controls.Add(rtbMessages);
-
-            tabResults = new TabControl
+            // ── Query tabs ───────────────────────────────────────────────────────
+            tabQueries = new TabControl
             {
                 Dock = DockStyle.Fill,
                 Font = new Font("Segoe UI", 9f)
             };
-            tabResults.TabPages.AddRange(new[] { tabPageResults, tabPageMessages });
+            tabQueries.MouseClick += tabQueries_MouseClick;
 
-            splitMain.Panel2.Controls.Add(tabResults);
-            splitMain.Panel2.Controls.Add(pnlQueryToolbar2);
-
-            // ── Column Browser (right panel) ─────────────────────────────────────
+            // ── Column browser ───────────────────────────────────────────────────
             pnlColumnBrowser = new Panel
             {
                 Dock = DockStyle.Fill,
@@ -323,8 +164,7 @@ namespace ReportLineOAForDebtAndBranch
             lblColumnBrowserHeader = new Label
             {
                 Text = "Column Browser",
-                Dock = DockStyle.Top,
-                Height = 28,
+                Dock = DockStyle.Top, Height = 28,
                 TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
                 Padding = new Padding(6, 0, 0, 0),
                 Font = new Font("Segoe UI", 9f, FontStyle.Bold),
@@ -332,7 +172,7 @@ namespace ReportLineOAForDebtAndBranch
                 BackColor = Color.FromArgb(45, 45, 48)
             };
 
-            txtTableFilter = new TextBox
+            txtTableSearch = new TextBox
             {
                 Dock = DockStyle.Top,
                 Height = 24,
@@ -340,14 +180,13 @@ namespace ReportLineOAForDebtAndBranch
                 BackColor = Color.FromArgb(60, 60, 60),
                 ForeColor = Color.White,
                 BorderStyle = BorderStyle.FixedSingle,
-                PlaceholderText = "Filter columns..."
+                PlaceholderText = "Type table name + Enter to search..."
             };
-            txtTableFilter.TextChanged += txtTableFilter_TextChanged;
+            txtTableSearch.KeyDown += txtTableSearch_KeyDown;
 
             lblColumnBrowserStatus = new Label
             {
-                Dock = DockStyle.Top,
-                Height = 20,
+                Dock = DockStyle.Top, Height = 20,
                 Text = "Execute a query to see columns",
                 Font = new Font("Segoe UI", 8f, FontStyle.Italic),
                 ForeColor = Color.FromArgb(120, 120, 120),
@@ -363,62 +202,46 @@ namespace ReportLineOAForDebtAndBranch
                 ForeColor = Color.FromArgb(212, 212, 212),
                 BorderStyle = BorderStyle.None,
                 Font = new Font("Consolas", 9f),
-                ShowLines = true,
-                ShowPlusMinus = true,
-                FullRowSelect = true,
-                HideSelection = false
+                ShowLines = true, ShowPlusMinus = true,
+                FullRowSelect = true, HideSelection = false
             };
             treeColumns.NodeMouseDoubleClick += treeColumns_NodeMouseDoubleClick;
 
-            // stack: header → filter → status → tree (fill)
             pnlColumnBrowser.Controls.Add(treeColumns);
             pnlColumnBrowser.Controls.Add(lblColumnBrowserStatus);
-            pnlColumnBrowser.Controls.Add(txtTableFilter);
+            pnlColumnBrowser.Controls.Add(txtTableSearch);
             pnlColumnBrowser.Controls.Add(lblColumnBrowserHeader);
 
-            // ── Outer SplitContainer (left = editor+results | right = browser) ───
+            // ── Left panel ───────────────────────────────────────────────────────
+            var pnlLeft = new Panel { Dock = DockStyle.Fill };
+            pnlLeft.Controls.Add(tabQueries);
+            pnlLeft.Controls.Add(pnlQueryToolbar);
+
+            // ── Outer splitter ───────────────────────────────────────────────────
             splitOuter = new SplitContainer
             {
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Vertical,
                 BackColor = Color.FromArgb(30, 30, 30)
             };
-
-            splitOuter.Panel1.Controls.Add(splitMain);
+            splitOuter.Panel1.Controls.Add(pnlLeft);
             splitOuter.Panel2.Controls.Add(pnlColumnBrowser);
 
             // ── Status bar ───────────────────────────────────────────────────────
             statusStrip = new StatusStrip { BackColor = Color.FromArgb(0, 122, 204) };
-
             lblStatus = new ToolStripStatusLabel("Ready")
             {
                 ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9f)
-            };
-            lblRowCount = new ToolStripStatusLabel
-            {
-                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f),
                 Spring = true,
-                TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 9f)
-            };
-            lblExecTime = new ToolStripStatusLabel
-            {
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9f)
+                TextAlign = System.Drawing.ContentAlignment.MiddleLeft
             };
             progressBar = new ToolStripProgressBar
             {
-                Width = 100,
-                Visible = false,
-                Style = ProgressBarStyle.Marquee,
-                MarqueeAnimationSpeed = 30
+                Width = 120, Visible = false,
+                Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 30
             };
-
-            statusStrip.Items.AddRange(new ToolStripItem[]
-            {
-                lblStatus, lblRowCount, lblExecTime, progressBar
-            });
+            statusStrip.Items.AddRange(new ToolStripItem[] { lblStatus, progressBar });
 
             // ── Assemble form ────────────────────────────────────────────────────
             SuspendLayout();
@@ -429,6 +252,7 @@ namespace ReportLineOAForDebtAndBranch
             StartPosition = FormStartPosition.CenterScreen;
 
             Controls.Add(splitOuter);
+            Controls.Add(pnlQueryToolbar);
             Controls.Add(pnlToolbar);
             Controls.Add(statusStrip);
             ResumeLayout(false);

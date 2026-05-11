@@ -15,19 +15,96 @@ namespace ReportLineOAForDebtAndBranch
         private string _connectionString = string.Empty;
         private bool _isConnected = false;
 
-        // Stores the full column data for filter support
-        private readonly List<(string Table, string Column, string DataType, string Nullable)> _columnCache = new();
+        private QueryTabPage ActiveTab => (QueryTabPage)tabQueries.SelectedTab;
 
         public MainForm()
         {
             InitializeComponent();
             UpdateConnectionStatus(false);
+            AddNewTab();
+
             Load += (s, e) =>
             {
                 splitOuter.Panel1MinSize = 400;
                 splitOuter.Panel2MinSize = 180;
-                splitOuter.SplitterDistance = (int)(splitOuter.Width * 0.72);
+                splitOuter.SplitterDistance = (int)(splitOuter.Width * 0.75);
             };
+
+            KeyPreview = true;
+            KeyDown += MainForm_KeyDown;
+        }
+
+        // ── Tab management ──────────────────────────────────────────────────────
+
+        private void AddNewTab()
+        {
+            var tab = new QueryTabPage();
+            tab.Editor.KeyDown += rtbQuery_KeyDown;
+            tabQueries.TabPages.Add(tab);
+            tabQueries.SelectedTab = tab;
+            tab.Editor.Focus();
+        }
+
+        private void CloseActiveTab()
+        {
+            if (tabQueries.TabPages.Count <= 1) return;
+            var current = tabQueries.SelectedTab;
+            int idx = tabQueries.SelectedIndex;
+            tabQueries.TabPages.Remove(current);
+            tabQueries.SelectedIndex = Math.Min(idx, tabQueries.TabPages.Count - 1);
+        }
+
+        private void btnNewTab_Click(object sender, EventArgs e) => AddNewTab();
+
+        // Right-click tab → context menu to close
+        private void tabQueries_MouseClick(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right && e.Button != MouseButtons.Middle) return;
+
+            for (int i = 0; i < tabQueries.TabPages.Count; i++)
+            {
+                if (!tabQueries.GetTabRect(i).Contains(e.Location)) continue;
+                tabQueries.SelectedIndex = i;
+
+                if (e.Button == MouseButtons.Middle)
+                {
+                    CloseActiveTab();
+                    return;
+                }
+
+                var menu = new ContextMenuStrip();
+                menu.Items.Add("Close Tab", null, (s, _) => CloseActiveTab());
+                if (tabQueries.TabPages.Count > 1)
+                    menu.Items.Add("Close Other Tabs", null, (s, _) =>
+                    {
+                        var keep = tabQueries.SelectedTab;
+                        for (int j = tabQueries.TabPages.Count - 1; j >= 0; j--)
+                            if (tabQueries.TabPages[j] != keep)
+                                tabQueries.TabPages.RemoveAt(j);
+                    });
+                menu.Items.Add("-");
+                menu.Items.Add("Rename Tab", null, (s, _) =>
+                {
+                    string? name = SimplePrompt("Rename Tab", "Tab name:", ActiveTab.Text);
+                    if (name != null) ActiveTab.Text = name;
+                });
+                menu.Show(tabQueries, e.Location);
+                return;
+            }
+        }
+
+        private void MainForm_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Control && e.KeyCode == Keys.W)
+            {
+                e.SuppressKeyPress = true;
+                CloseActiveTab();
+            }
+            if (e.Control && e.KeyCode == Keys.T)
+            {
+                e.SuppressKeyPress = true;
+                AddNewTab();
+            }
         }
 
         // ── Connection ──────────────────────────────────────────────────────────
@@ -58,22 +135,21 @@ namespace ReportLineOAForDebtAndBranch
                 using var conn = new SqlConnection(_connectionString);
                 conn.Open();
                 _isConnected = true;
-
-                var builder = new SqlConnectionStringBuilder(_connectionString);
-                lblConnInfo.Text = $"{builder.DataSource}  |  {builder.InitialCatalog}";
+                var b = new SqlConnectionStringBuilder(_connectionString);
+                lblConnInfo.Text = $"{b.DataSource}  |  {b.InitialCatalog}";
                 UpdateConnectionStatus(true);
-                AppendMessage($"Connected to {builder.DataSource} / {builder.InitialCatalog}", Color.Green);
+                ActiveTab.AppendMessage($"Connected to {b.DataSource} / {b.InitialCatalog}", Color.Green);
             }
             catch (Exception ex)
             {
                 _isConnected = false;
                 UpdateConnectionStatus(false);
-                AppendMessage($"Connection failed: {ex.Message}", Color.Red);
+                ActiveTab.AppendMessage($"Connection failed: {ex.Message}", Color.Red);
                 MessageBox.Show(ex.Message, "Connection Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // ── Execute Query ───────────────────────────────────────────────────────
+        // ── Execute ─────────────────────────────────────────────────────────────
 
         private async void btnExecute_Click(object sender, EventArgs e)
         {
@@ -84,15 +160,15 @@ namespace ReportLineOAForDebtAndBranch
                 return;
             }
 
-            string sql = GetActiveQuery();
+            string sql = ActiveTab.GetActiveQuery();
             if (string.IsNullOrWhiteSpace(sql)) return;
 
+            var tab = ActiveTab;
             SetExecutingState(true);
-            tabResults.SelectedTab = tabPageResults;
+            tab.ShowResultsTab();
 
-            // Run query and column browser fetch in parallel
             var queryTask = Task.Run(() => ExecuteQuery(sql));
-            var columnsTask = FetchColumnsForQueryAsync(sql);
+            var columnsTask = FetchColumnsFromQueryAsync(sql);
 
             try
             {
@@ -101,29 +177,17 @@ namespace ReportLineOAForDebtAndBranch
                 sw.Stop();
 
                 var result = await queryTask;
-                if (result.Tables.Count > 0 && result.Tables[0].Rows.Count > 0)
-                {
-                    grid.DataSource = result.Tables[0];
-                    lblRowCount.Text = $"{result.Tables[0].Rows.Count} row(s)";
-                }
-                else
-                {
-                    grid.DataSource = null;
-                    lblRowCount.Text = "0 row(s)";
-                }
+                var dt = result.Tables.Count > 0 ? result.Tables[0] : null;
+                tab.SetResult(dt, sw.ElapsedMilliseconds);
+                tab.AppendMessage($"Query executed in {sw.ElapsedMilliseconds} ms.", Color.DodgerBlue);
 
-                AppendMessage($"Query executed in {sw.ElapsedMilliseconds} ms.", Color.DodgerBlue);
-                lblExecTime.Text = $"{sw.ElapsedMilliseconds} ms";
-
-                PopulateColumnBrowser(await columnsTask, sql);
+                PopulateColumnBrowserFromQuery(await columnsTask, sql);
             }
             catch (Exception ex)
             {
-                tabResults.SelectedTab = tabPageMessages;
-                AppendMessage($"Error: {ex.Message}", Color.Red);
-
-                // Still try to show columns even if query failed
-                try { PopulateColumnBrowser(await columnsTask, sql); } catch { }
+                tab.ShowMessagesTab();
+                tab.AppendMessage($"Error: {ex.Message}", Color.Red);
+                try { PopulateColumnBrowserFromQuery(await columnsTask, sql); } catch { }
             }
             finally
             {
@@ -145,18 +209,17 @@ namespace ReportLineOAForDebtAndBranch
         private async void btnExecuteNonQuery_Click(object sender, EventArgs e)
         {
             if (!_isConnected) return;
-
-            string sql = GetActiveQuery();
+            string sql = ActiveTab.GetActiveQuery();
             if (string.IsNullOrWhiteSpace(sql)) return;
 
             if (MessageBox.Show("Execute non-query (INSERT/UPDATE/DELETE/DDL)?",
-                "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-                return;
+                "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
 
+            var tab = ActiveTab;
             SetExecutingState(true);
-            tabResults.SelectedTab = tabPageMessages;
+            tab.ShowMessagesTab();
 
-            var columnsTask = FetchColumnsForQueryAsync(sql);
+            var columnsTask = FetchColumnsFromQueryAsync(sql);
             try
             {
                 var sw = Stopwatch.StartNew();
@@ -168,17 +231,14 @@ namespace ReportLineOAForDebtAndBranch
                     return cmd.ExecuteNonQuery();
                 });
                 sw.Stop();
-
-                AppendMessage($"{rows} row(s) affected  ({sw.ElapsedMilliseconds} ms).", Color.DodgerBlue);
-                lblRowCount.Text = $"{rows} row(s) affected";
-                lblExecTime.Text = $"{sw.ElapsedMilliseconds} ms";
-
-                PopulateColumnBrowser(await columnsTask, sql);
+                tab.AppendMessage($"{rows} row(s) affected  ({sw.ElapsedMilliseconds} ms).", Color.DodgerBlue);
+                tab.LblRowCount.Text = $"{rows} row(s) affected  |  {sw.ElapsedMilliseconds} ms";
+                PopulateColumnBrowserFromQuery(await columnsTask, sql);
             }
             catch (Exception ex)
             {
-                AppendMessage($"Error: {ex.Message}", Color.Red);
-                try { PopulateColumnBrowser(await columnsTask, sql); } catch { }
+                tab.AppendMessage($"Error: {ex.Message}", Color.Red);
+                try { PopulateColumnBrowserFromQuery(await columnsTask, sql); } catch { }
             }
             finally
             {
@@ -186,93 +246,128 @@ namespace ReportLineOAForDebtAndBranch
             }
         }
 
-        // ── Column Browser ──────────────────────────────────────────────────────
+        // ── Column browser ──────────────────────────────────────────────────────
 
-        private static List<string> ParseTableNames(string sql)
+        // Called after Execute: parse tables from SQL, fetch columns
+        private async Task<List<(string Table, string Column, string DataType, string Nullable)>>
+            FetchColumnsFromQueryAsync(string sql)
         {
-            var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            // Match: FROM TableName / JOIN TableName / FROM [schema].[Table] / FROM schema.Table
-            var pattern = new Regex(
-                @"(?:FROM|JOIN)\s+(\[?[\w]+\]?\.)?(\[?([\w]+)\]?)",
-                RegexOptions.IgnoreCase | RegexOptions.Multiline);
-
-            foreach (Match m in pattern.Matches(sql))
-            {
-                string name = m.Groups[3].Value.Trim('[', ']');
-                // Skip SQL keywords that can appear after FROM/JOIN
-                if (!string.Equals(name, "SELECT", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(name, "WITH", StringComparison.OrdinalIgnoreCase))
-                    tables.Add(name);
-            }
-
-            return new List<string>(tables);
+            var tables = ParseTableNames(sql);
+            if (tables.Count == 0 || !_isConnected)
+                return new();
+            return await Task.Run(() => FetchColumns(tables));
         }
 
-        private async Task<List<(string Table, string Column, string DataType, string Nullable)>>
-            FetchColumnsForQueryAsync(string sql)
+        // Called from search box Enter key: fetch all columns of the given table name
+        private async void txtTableSearch_KeyDown(object sender, KeyEventArgs e)
         {
-            var tableNames = ParseTableNames(sql);
-            if (tableNames.Count == 0 || !_isConnected)
-                return new List<(string, string, string, string)>();
+            if (e.KeyCode != Keys.Enter) return;
+            e.SuppressKeyPress = true;
 
-            return await Task.Run(() => FetchColumns(tableNames));
+            string tableName = txtTableSearch.Text.Trim();
+            if (string.IsNullOrEmpty(tableName)) { ClearColumnBrowser(); return; }
+            if (!_isConnected)
+            {
+                lblColumnBrowserStatus.Text = "Not connected";
+                return;
+            }
+
+            lblColumnBrowserStatus.Text = $"Searching \"{tableName}\"...";
+            treeColumns.Nodes.Clear();
+
+            try
+            {
+                // Wildcard: if user typed "%" treat as LIKE, otherwise exact match
+                var columns = await Task.Run(() => FetchColumnsBySearch(tableName));
+                PopulateColumnBrowserDirect(columns);
+            }
+            catch (Exception ex)
+            {
+                lblColumnBrowserStatus.Text = $"Error: {ex.Message}";
+            }
+        }
+
+        private List<(string Table, string Column, string DataType, string Nullable)>
+            FetchColumnsBySearch(string tableNamePattern)
+        {
+            bool isWild = tableNamePattern.Contains('%') || tableNamePattern.Contains('_');
+            string op = isWild ? "LIKE" : "=";
+
+            string query = $@"
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+FROM   INFORMATION_SCHEMA.COLUMNS
+WHERE  TABLE_NAME {op} @pattern
+ORDER  BY TABLE_NAME, ORDINAL_POSITION";
+
+            var result = new List<(string, string, string, string)>();
+            using var conn = new SqlConnection(_connectionString);
+            conn.Open();
+            using var cmd = new SqlCommand(query, conn) { CommandTimeout = 30 };
+            cmd.Parameters.AddWithValue("@pattern", tableNamePattern);
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+                result.Add((reader.GetString(0), reader.GetString(1),
+                            reader.GetString(2), reader.GetString(3)));
+            return result;
         }
 
         private List<(string Table, string Column, string DataType, string Nullable)>
             FetchColumns(List<string> tableNames)
         {
-            var result = new List<(string, string, string, string)>();
-
-            // Build parameterised IN list
             var paramNames = new List<string>();
-            for (int i = 0; i < tableNames.Count; i++)
-                paramNames.Add($"@t{i}");
-
+            for (int i = 0; i < tableNames.Count; i++) paramNames.Add($"@t{i}");
             string inClause = string.Join(",", paramNames);
+
             string query = $@"
 SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
 FROM   INFORMATION_SCHEMA.COLUMNS
 WHERE  TABLE_NAME IN ({inClause})
 ORDER  BY TABLE_NAME, ORDINAL_POSITION";
 
+            var result = new List<(string, string, string, string)>();
             using var conn = new SqlConnection(_connectionString);
             conn.Open();
             using var cmd = new SqlCommand(query, conn) { CommandTimeout = 30 };
             for (int i = 0; i < tableNames.Count; i++)
                 cmd.Parameters.AddWithValue(paramNames[i], tableNames[i]);
-
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
                 result.Add((reader.GetString(0), reader.GetString(1),
                             reader.GetString(2), reader.GetString(3)));
-
             return result;
         }
 
-        private void PopulateColumnBrowser(
+        private static List<string> ParseTableNames(string sql)
+        {
+            var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var pattern = new Regex(
+                @"(?:FROM|JOIN)\s+(\[?[\w]+\]?\.)?(\[?([\w]+)\]?)",
+                RegexOptions.IgnoreCase | RegexOptions.Multiline);
+            foreach (Match m in pattern.Matches(sql))
+            {
+                string name = m.Groups[3].Value.Trim('[', ']');
+                if (!string.Equals(name, "SELECT", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(name, "WITH", StringComparison.OrdinalIgnoreCase))
+                    tables.Add(name);
+            }
+            return new List<string>(tables);
+        }
+
+        private void PopulateColumnBrowserFromQuery(
             List<(string Table, string Column, string DataType, string Nullable)> columns,
             string sql)
         {
-            if (InvokeRequired)
-            {
-                Invoke(() => PopulateColumnBrowser(columns, sql));
-                return;
-            }
-
-            _columnCache.Clear();
-            _columnCache.AddRange(columns);
+            if (InvokeRequired) { Invoke(() => PopulateColumnBrowserFromQuery(columns, sql)); return; }
 
             treeColumns.BeginUpdate();
             treeColumns.Nodes.Clear();
-            txtTableFilter.Clear();
 
             if (columns.Count == 0)
             {
                 var tables = ParseTableNames(sql);
                 lblColumnBrowserStatus.Text = tables.Count == 0
                     ? "No tables found in query"
-                    : $"No columns found for: {string.Join(", ", tables)}";
+                    : $"No schema info for: {string.Join(", ", tables)}";
                 treeColumns.EndUpdate();
                 return;
             }
@@ -281,9 +376,33 @@ ORDER  BY TABLE_NAME, ORDINAL_POSITION";
             treeColumns.ExpandAll();
             treeColumns.EndUpdate();
 
-            var uniqueTables = new HashSet<string>();
-            foreach (var (t, _, _, _) in columns) uniqueTables.Add(t);
-            lblColumnBrowserStatus.Text = $"{uniqueTables.Count} table(s)  |  {columns.Count} column(s)";
+            var unique = new HashSet<string>();
+            foreach (var (t, _, _, _) in columns) unique.Add(t);
+            lblColumnBrowserStatus.Text = $"{unique.Count} table(s)  |  {columns.Count} column(s)";
+        }
+
+        private void PopulateColumnBrowserDirect(
+            List<(string Table, string Column, string DataType, string Nullable)> columns)
+        {
+            if (InvokeRequired) { Invoke(() => PopulateColumnBrowserDirect(columns)); return; }
+
+            treeColumns.BeginUpdate();
+            treeColumns.Nodes.Clear();
+
+            if (columns.Count == 0)
+            {
+                lblColumnBrowserStatus.Text = "Table not found";
+                treeColumns.EndUpdate();
+                return;
+            }
+
+            BuildTreeNodes(columns);
+            treeColumns.ExpandAll();
+            treeColumns.EndUpdate();
+
+            var unique = new HashSet<string>();
+            foreach (var (t, _, _, _) in columns) unique.Add(t);
+            lblColumnBrowserStatus.Text = $"{unique.Count} table(s)  |  {columns.Count} column(s)";
         }
 
         private void BuildTreeNodes(
@@ -304,12 +423,11 @@ ORDER  BY TABLE_NAME, ORDINAL_POSITION";
                     treeColumns.Nodes.Add(tableNode);
                     currentTable = table;
                 }
-
                 string nullMark = nullable == "YES" ? "?" : "";
                 var colNode = new TreeNode($"{column}  ({dataType}{nullMark})")
                 {
                     ForeColor = Color.FromArgb(212, 212, 212),
-                    Tag = column   // store raw name for double-click insert
+                    Tag = column
                 };
                 tableNode!.Nodes.Add(colNode);
             }
@@ -317,92 +435,23 @@ ORDER  BY TABLE_NAME, ORDINAL_POSITION";
 
         private void ClearColumnBrowser()
         {
-            _columnCache.Clear();
             treeColumns.Nodes.Clear();
             lblColumnBrowserStatus.Text = "Execute a query to see columns";
         }
 
-        // Filter tree as user types
-        private void txtTableFilter_TextChanged(object sender, EventArgs e)
-        {
-            string filter = txtTableFilter.Text.Trim();
-
-            treeColumns.BeginUpdate();
-            treeColumns.Nodes.Clear();
-
-            var filtered = string.IsNullOrEmpty(filter)
-                ? _columnCache
-                : _columnCache.FindAll(c =>
-                    c.Column.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-                    c.Table.Contains(filter, StringComparison.OrdinalIgnoreCase));
-
-            if (filtered.Count > 0)
-                BuildTreeNodes(filtered);
-
-            treeColumns.ExpandAll();
-            treeColumns.EndUpdate();
-        }
-
-        // Double-click a column node → insert column name at cursor in query editor
+        // Double-click column → insert name at cursor
         private void treeColumns_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
         {
-            if (e.Node.Tag is string colName)
+            if (e.Node.Tag is string colName && tabQueries.SelectedTab is QueryTabPage tab)
             {
-                int sel = rtbQuery.SelectionStart;
-                rtbQuery.Text = rtbQuery.Text.Insert(sel, colName);
-                rtbQuery.SelectionStart = sel + colName.Length;
-                rtbQuery.Focus();
+                int sel = tab.Editor.SelectionStart;
+                tab.Editor.Text = tab.Editor.Text.Insert(sel, colName);
+                tab.Editor.SelectionStart = sel + colName.Length;
+                tab.Editor.Focus();
             }
         }
 
-        // ── Helpers ─────────────────────────────────────────────────────────────
-
-        private string GetActiveQuery()
-        {
-            string selected = rtbQuery.SelectedText.Trim();
-            return string.IsNullOrEmpty(selected) ? rtbQuery.Text.Trim() : selected;
-        }
-
-        private void UpdateConnectionStatus(bool connected)
-        {
-            picStatus.BackColor = connected ? Color.LimeGreen : Color.Gray;
-            btnDisconnect.Enabled = connected;
-            btnExecute.Enabled = connected;
-            btnExecuteNonQuery.Enabled = connected;
-            btnClearResults.Enabled = true;
-        }
-
-        private void SetExecutingState(bool executing)
-        {
-            btnExecute.Enabled = !executing;
-            btnExecuteNonQuery.Enabled = !executing;
-            progressBar.Visible = executing;
-            lblStatus.Text = executing ? "Executing..." : "Ready";
-        }
-
-        private void AppendMessage(string text, Color color)
-        {
-            if (InvokeRequired) { Invoke(() => AppendMessage(text, color)); return; }
-
-            int start = rtbMessages.TextLength;
-            string line = $"[{DateTime.Now:HH:mm:ss}]  {text}{Environment.NewLine}";
-            rtbMessages.AppendText(line);
-            rtbMessages.Select(start, line.Length);
-            rtbMessages.SelectionColor = color;
-            rtbMessages.SelectionLength = 0;
-            rtbMessages.ScrollToCaret();
-        }
-
-        private void btnClearResults_Click(object sender, EventArgs e)
-        {
-            grid.DataSource = null;
-            rtbMessages.Clear();
-            lblRowCount.Text = string.Empty;
-            lblExecTime.Text = string.Empty;
-            ClearColumnBrowser();
-        }
-
-        private void btnClearQuery_Click(object sender, EventArgs e) => rtbQuery.Clear();
+        // ── Keyboard shortcuts ──────────────────────────────────────────────────
 
         private void rtbQuery_KeyDown(object sender, KeyEventArgs e)
         {
@@ -413,47 +462,51 @@ ORDER  BY TABLE_NAME, ORDINAL_POSITION";
             }
         }
 
-        // Export result to CSV
-        private void btnExportCsv_Click(object sender, EventArgs e)
+        // ── Helpers ─────────────────────────────────────────────────────────────
+
+        private void UpdateConnectionStatus(bool connected)
         {
-            if (grid.DataSource is not DataTable dt || dt.Rows.Count == 0) return;
-
-            using var dlg = new SaveFileDialog
-            {
-                Filter = "CSV files|*.csv",
-                FileName = "result.csv"
-            };
-            if (dlg.ShowDialog(this) != DialogResult.OK) return;
-
-            try
-            {
-                var lines = new List<string>();
-                var headers = new List<string>();
-                foreach (DataColumn col in dt.Columns) headers.Add(CsvEscape(col.ColumnName));
-                lines.Add(string.Join(",", headers));
-
-                foreach (DataRow row in dt.Rows)
-                {
-                    var cells = new List<string>();
-                    foreach (var item in row.ItemArray)
-                        cells.Add(CsvEscape(item?.ToString() ?? string.Empty));
-                    lines.Add(string.Join(",", cells));
-                }
-
-                System.IO.File.WriteAllLines(dlg.FileName, lines, System.Text.Encoding.UTF8);
-                AppendMessage($"Exported {dt.Rows.Count} row(s) to {dlg.FileName}", Color.Green);
-            }
-            catch (Exception ex)
-            {
-                AppendMessage($"Export error: {ex.Message}", Color.Red);
-            }
+            picStatus.BackColor = connected ? Color.LimeGreen : Color.Gray;
+            btnDisconnect.Enabled = connected;
+            btnExecute.Enabled = connected;
+            btnExecuteNonQuery.Enabled = connected;
         }
 
-        private static string CsvEscape(string s)
+        private void SetExecutingState(bool executing)
         {
-            if (s.Contains(',') || s.Contains('"') || s.Contains('\n'))
-                return $"\"{s.Replace("\"", "\"\"")}\"";
-            return s;
+            btnExecute.Enabled = !executing;
+            btnExecuteNonQuery.Enabled = !executing;
+            progressBar.Visible = executing;
+            lblStatus.Text = executing ? "Executing..." : "Ready";
+        }
+
+        private static string? SimplePrompt(string title, string label, string defaultValue)
+        {
+            var frm = new Form
+            {
+                Text = title, Size = new Size(340, 130),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false, MinimizeBox = false,
+                BackColor = Color.FromArgb(37, 37, 38)
+            };
+            var lbl = new Label { Text = label, Location = new Point(10, 12), AutoSize = true,
+                ForeColor = Color.FromArgb(200, 200, 200), Font = new Font("Segoe UI", 9.5f) };
+            var txt = new TextBox { Text = defaultValue, Location = new Point(10, 32), Width = 304,
+                BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle, Font = new Font("Segoe UI", 9.5f) };
+            var ok = new Button { Text = "OK", Location = new Point(148, 64), Width = 75, Height = 28,
+                DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(0, 122, 204), ForeColor = Color.White };
+            ok.FlatAppearance.BorderSize = 0;
+            var cancel = new Button { Text = "Cancel", Location = new Point(233, 64), Width = 75, Height = 28,
+                DialogResult = DialogResult.Cancel, FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(70, 70, 72), ForeColor = Color.White };
+            cancel.FlatAppearance.BorderSize = 0;
+            frm.AcceptButton = ok; frm.CancelButton = cancel;
+            frm.Controls.AddRange(new Control[] { lbl, txt, ok, cancel });
+            txt.SelectAll();
+            return frm.ShowDialog() == DialogResult.OK ? txt.Text.Trim() : null;
         }
     }
 }
