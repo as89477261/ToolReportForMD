@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using Microsoft.Data.SqlClient;
@@ -13,6 +14,11 @@ namespace ReportLineOAForDebtAndBranch
         private TabPage tabSimple;
         private TabPage tabAdvanced;
 
+        // Saved connections bar
+        private ComboBox cboSaved;
+        private Button btnSave;
+        private Button btnDelete;
+
         // Simple tab
         private TextBox txtServer;
         private TextBox txtDatabase;
@@ -26,19 +32,95 @@ namespace ReportLineOAForDebtAndBranch
         // Advanced tab
         private TextBox txtConnectionString;
 
-        // Buttons
+        // Bottom
+        private Label lblTestResult;
         private Button btnTest;
         private Button btnOk;
         private Button btnCancel;
 
-        private Label lblTestResult;
+        private List<SavedConnection> _savedConnections = new();
+        private bool _suppressCboEvent = false;
 
         public ConnectionDialog(string existingConnectionString)
         {
             InitializeComponent();
+            LoadSavedConnections();
             if (!string.IsNullOrEmpty(existingConnectionString))
                 LoadFromConnectionString(existingConnectionString);
         }
+
+        // ── Saved connections ────────────────────────────────────────────────────
+
+        private void LoadSavedConnections()
+        {
+            _savedConnections = ConnectionStore.Load();
+            _suppressCboEvent = true;
+            cboSaved.Items.Clear();
+            foreach (var c in _savedConnections)
+                cboSaved.Items.Add(c.Name);
+            _suppressCboEvent = false;
+        }
+
+        private void cboSaved_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_suppressCboEvent || cboSaved.SelectedIndex < 0) return;
+            var selected = _savedConnections[cboSaved.SelectedIndex];
+            LoadFromConnectionString(selected.ConnectionString);
+            lblTestResult.Text = string.Empty;
+        }
+
+        private void btnSave_Click(object sender, EventArgs e)
+        {
+            string cs = BuildConnectionString();
+            if (string.IsNullOrWhiteSpace(cs))
+            {
+                MessageBox.Show("Fill in server and database first.", "Validation",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // Suggest a name from existing selection or server+db
+            string defaultName = cboSaved.Text.Trim();
+            if (string.IsNullOrEmpty(defaultName))
+            {
+                try
+                {
+                    var b = new SqlConnectionStringBuilder(cs);
+                    defaultName = $"{b.DataSource} / {b.InitialCatalog}";
+                }
+                catch { defaultName = "New Connection"; }
+            }
+
+            string? name = Prompt("Save Connection", "Connection name:", defaultName);
+            if (name == null) return;
+
+            ConnectionStore.Upsert(name, cs);
+            LoadSavedConnections();
+
+            _suppressCboEvent = true;
+            cboSaved.Text = name;
+            _suppressCboEvent = false;
+
+            lblTestResult.Text = $"Saved as \"{name}\"";
+            lblTestResult.ForeColor = Color.Green;
+        }
+
+        private void btnDelete_Click(object sender, EventArgs e)
+        {
+            string name = cboSaved.Text.Trim();
+            if (string.IsNullOrEmpty(name)) return;
+
+            if (MessageBox.Show($"Delete \"{name}\"?", "Confirm Delete",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            ConnectionStore.Delete(name);
+            LoadSavedConnections();
+            cboSaved.Text = string.Empty;
+            lblTestResult.Text = $"Deleted \"{name}\"";
+            lblTestResult.ForeColor = Color.OrangeRed;
+        }
+
+        // ── Connection string helpers ────────────────────────────────────────────
 
         private void LoadFromConnectionString(string cs)
         {
@@ -60,7 +142,7 @@ namespace ReportLineOAForDebtAndBranch
                     txtPassword.Text = b.Password;
                 }
             }
-            catch { /* ignore parse errors */ }
+            catch { }
         }
 
         private void rdoAuth_CheckedChanged(object sender, EventArgs e)
@@ -73,14 +155,12 @@ namespace ReportLineOAForDebtAndBranch
 
         private void tabControl_SelectedIndexChanged(object sender, EventArgs e)
         {
-            // When switching to Advanced tab, build string from simple fields
             if (tabControl.SelectedTab == tabAdvanced)
                 txtConnectionString.Text = BuildConnectionString();
         }
 
         private string BuildConnectionString()
         {
-            // If user is on Advanced tab just return what they typed
             if (tabControl.SelectedTab == tabAdvanced && !string.IsNullOrWhiteSpace(txtConnectionString.Text))
                 return txtConnectionString.Text.Trim();
 
@@ -111,18 +191,17 @@ namespace ReportLineOAForDebtAndBranch
             string cs = BuildConnectionString();
             lblTestResult.Text = "Testing...";
             lblTestResult.ForeColor = Color.Gray;
-
             try
             {
                 using var conn = new SqlConnection(cs);
                 conn.Open();
                 lblTestResult.Text = "Connection successful!";
-                lblTestResult.ForeColor = Color.Green;
+                lblTestResult.ForeColor = Color.LimeGreen;
             }
             catch (Exception ex)
             {
                 lblTestResult.Text = $"Failed: {ex.Message}";
-                lblTestResult.ForeColor = Color.Red;
+                lblTestResult.ForeColor = Color.OrangeRed;
             }
         }
 
@@ -139,11 +218,46 @@ namespace ReportLineOAForDebtAndBranch
             Close();
         }
 
+        // Simple single-line input prompt
+        private static string? Prompt(string title, string label, string defaultValue)
+        {
+            var frm = new Form
+            {
+                Text = title,
+                Size = new Size(360, 140),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false, MinimizeBox = false,
+                BackColor = Color.FromArgb(37, 37, 38)
+            };
+            var lbl = new Label { Text = label, Location = new Point(12, 14), AutoSize = true,
+                ForeColor = Color.FromArgb(200, 200, 200), Font = new Font("Segoe UI", 9.5f) };
+            var txt = new TextBox { Text = defaultValue, Location = new Point(12, 35), Width = 320,
+                BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle, Font = new Font("Segoe UI", 9.5f) };
+            var ok = new Button { Text = "OK", Location = new Point(170, 68), Width = 75, Height = 28,
+                DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(0, 122, 204), ForeColor = Color.White };
+            ok.FlatAppearance.BorderSize = 0;
+            var cancel = new Button { Text = "Cancel", Location = new Point(255, 68), Width = 75, Height = 28,
+                DialogResult = DialogResult.Cancel, FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(70, 70, 72), ForeColor = Color.White };
+            cancel.FlatAppearance.BorderSize = 0;
+            frm.AcceptButton = ok;
+            frm.CancelButton = cancel;
+            frm.Controls.AddRange(new Control[] { lbl, txt, ok, cancel });
+            txt.SelectAll();
+
+            return frm.ShowDialog() == DialogResult.OK ? txt.Text.Trim() : null;
+        }
+
+        // ── UI layout ────────────────────────────────────────────────────────────
+
         private void InitializeComponent()
         {
             Text = "Connect to SQL Server";
-            Size = new Size(480, 420);
-            MinimumSize = new Size(440, 380);
+            Size = new Size(480, 490);
+            MinimumSize = new Size(440, 460);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -155,26 +269,80 @@ namespace ReportLineOAForDebtAndBranch
 
             Label MakeLabel(string text, int x, int y) => new Label
             {
-                Text = text,
-                Location = new Point(x, y),
-                AutoSize = true,
-                Font = font,
-                ForeColor = Color.FromArgb(200, 200, 200)
+                Text = text, Location = new Point(x, y), AutoSize = true,
+                Font = font, ForeColor = Color.FromArgb(200, 200, 200)
             };
 
             TextBox MakeTextBox(int x, int y, int w) => new TextBox
             {
-                Location = new Point(x, y),
-                Width = w,
-                Font = font,
-                BackColor = Color.FromArgb(60, 60, 60),
-                ForeColor = Color.White,
+                Location = new Point(x, y), Width = w, Font = font,
+                BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White,
                 BorderStyle = BorderStyle.FixedSingle
             };
 
+            // ── Saved connections bar ────────────────────────────────────────────
+            var pnlSaved = new Panel
+            {
+                Location = new Point(10, 8),
+                Width = 445,
+                Height = 42,
+                BackColor = Color.FromArgb(45, 45, 48)
+            };
+
+            var lblSaved = new Label
+            {
+                Text = "Saved:",
+                Location = new Point(6, 12),
+                AutoSize = true,
+                Font = font,
+                ForeColor = Color.FromArgb(180, 180, 180)
+            };
+
+            cboSaved = new ComboBox
+            {
+                Location = new Point(58, 8),
+                Width = 220,
+                Height = 26,
+                DropDownStyle = ComboBoxStyle.DropDown,
+                Font = font,
+                BackColor = Color.FromArgb(60, 60, 60),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat
+            };
+            cboSaved.SelectedIndexChanged += cboSaved_SelectedIndexChanged;
+
+            btnSave = new Button
+            {
+                Text = "Save",
+                Location = new Point(286, 7),
+                Width = 60,
+                Height = 27,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(0, 122, 204),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f)
+            };
+            btnSave.FlatAppearance.BorderSize = 0;
+            btnSave.Click += btnSave_Click;
+
+            btnDelete = new Button
+            {
+                Text = "Delete",
+                Location = new Point(352, 7),
+                Width = 60,
+                Height = 27,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(160, 50, 50),
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f)
+            };
+            btnDelete.FlatAppearance.BorderSize = 0;
+            btnDelete.Click += btnDelete_Click;
+
+            pnlSaved.Controls.AddRange(new Control[] { lblSaved, cboSaved, btnSave, btnDelete });
+
             // ── Simple tab ───────────────────────────────────────────────────────
-            tabSimple = new TabPage("Connection");
-            tabSimple.BackColor = Color.FromArgb(37, 37, 38);
+            tabSimple = new TabPage("Connection") { BackColor = Color.FromArgb(37, 37, 38) };
 
             var lblServer = MakeLabel("Server:", 16, 20);
             txtServer = MakeTextBox(130, 17, 300);
@@ -188,21 +356,16 @@ namespace ReportLineOAForDebtAndBranch
             rdoWindowsAuth = new RadioButton
             {
                 Text = "Windows Authentication",
-                Location = new Point(130, 90),
-                AutoSize = true,
-                Font = font,
-                ForeColor = Color.FromArgb(200, 200, 200),
-                Checked = true
+                Location = new Point(130, 90), AutoSize = true,
+                Font = font, ForeColor = Color.FromArgb(200, 200, 200), Checked = true
             };
             rdoWindowsAuth.CheckedChanged += rdoAuth_CheckedChanged;
 
             rdoSqlAuth = new RadioButton
             {
                 Text = "SQL Server Authentication",
-                Location = new Point(130, 115),
-                AutoSize = true,
-                Font = font,
-                ForeColor = Color.FromArgb(200, 200, 200)
+                Location = new Point(130, 115), AutoSize = true,
+                Font = font, ForeColor = Color.FromArgb(200, 200, 200)
             };
             rdoSqlAuth.CheckedChanged += rdoAuth_CheckedChanged;
 
@@ -217,22 +380,14 @@ namespace ReportLineOAForDebtAndBranch
 
             chkSavePassword = new CheckBox
             {
-                Text = "Remember password",
-                Location = new Point(130, 208),
-                AutoSize = true,
-                Font = font,
-                ForeColor = Color.FromArgb(180, 180, 180),
-                Enabled = false
+                Text = "Remember password", Location = new Point(130, 208), AutoSize = true,
+                Font = font, ForeColor = Color.FromArgb(180, 180, 180), Enabled = false
             };
 
             chkTrustCert = new CheckBox
             {
-                Text = "Trust Server Certificate",
-                Location = new Point(130, 235),
-                AutoSize = true,
-                Font = font,
-                ForeColor = Color.FromArgb(180, 180, 180),
-                Checked = true
+                Text = "Trust Server Certificate", Location = new Point(130, 235), AutoSize = true,
+                Font = font, ForeColor = Color.FromArgb(180, 180, 180), Checked = true
             };
 
             tabSimple.Controls.AddRange(new Control[]
@@ -244,30 +399,22 @@ namespace ReportLineOAForDebtAndBranch
             });
 
             // ── Advanced tab ─────────────────────────────────────────────────────
-            tabAdvanced = new TabPage("Connection String");
-            tabAdvanced.BackColor = Color.FromArgb(37, 37, 38);
+            tabAdvanced = new TabPage("Connection String") { BackColor = Color.FromArgb(37, 37, 38) };
 
             var lblCs = MakeLabel("Connection String:", 16, 20);
             txtConnectionString = new TextBox
             {
-                Location = new Point(16, 45),
-                Width = 415,
-                Height = 180,
-                Multiline = true,
-                ScrollBars = ScrollBars.Vertical,
+                Location = new Point(16, 45), Width = 415, Height = 180,
+                Multiline = true, ScrollBars = ScrollBars.Vertical,
                 Font = new Font("Consolas", 9.5f),
-                BackColor = Color.FromArgb(30, 30, 30),
-                ForeColor = Color.White,
+                BackColor = Color.FromArgb(30, 30, 30), ForeColor = Color.White,
                 BorderStyle = BorderStyle.FixedSingle
             };
 
             var lblExample = new Label
             {
                 Text = "Example: Server=localhost;Database=master;Integrated Security=true;TrustServerCertificate=true",
-                Location = new Point(16, 235),
-                Width = 415,
-                AutoSize = false,
-                Height = 40,
+                Location = new Point(16, 235), Width = 415, AutoSize = false, Height = 40,
                 Font = new Font("Segoe UI", 8f, FontStyle.Italic),
                 ForeColor = Color.FromArgb(130, 130, 130)
             };
@@ -277,7 +424,7 @@ namespace ReportLineOAForDebtAndBranch
             // ── Tab control ──────────────────────────────────────────────────────
             tabControl = new TabControl
             {
-                Location = new Point(10, 10),
+                Location = new Point(10, 58),
                 Width = 445,
                 Height = 290,
                 Font = font
@@ -289,23 +436,19 @@ namespace ReportLineOAForDebtAndBranch
             lblTestResult = new Label
             {
                 Text = string.Empty,
-                Location = new Point(14, 310),
-                Width = 300,
+                Location = new Point(14, 358),
+                Width = 430,
                 AutoSize = false,
                 Font = new Font("Segoe UI", 9f),
-                ForeColor = Color.Green
+                ForeColor = Color.LimeGreen
             };
 
             btnTest = new Button
             {
                 Text = "Test Connection",
-                Location = new Point(14, 334),
-                Width = 130,
-                Height = 30,
+                Location = new Point(14, 382), Width = 130, Height = 30,
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(70, 70, 72),
-                ForeColor = Color.White,
-                Font = font
+                BackColor = Color.FromArgb(70, 70, 72), ForeColor = Color.White, Font = font
             };
             btnTest.FlatAppearance.BorderSize = 0;
             btnTest.Click += btnTest_Click;
@@ -313,13 +456,9 @@ namespace ReportLineOAForDebtAndBranch
             btnOk = new Button
             {
                 Text = "Connect",
-                Location = new Point(260, 334),
-                Width = 90,
-                Height = 30,
+                Location = new Point(260, 382), Width = 90, Height = 30,
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(0, 122, 204),
-                ForeColor = Color.White,
-                Font = font
+                BackColor = Color.FromArgb(0, 122, 204), ForeColor = Color.White, Font = font
             };
             btnOk.FlatAppearance.BorderSize = 0;
             btnOk.Click += btnOk_Click;
@@ -327,13 +466,9 @@ namespace ReportLineOAForDebtAndBranch
             btnCancel = new Button
             {
                 Text = "Cancel",
-                Location = new Point(358, 334),
-                Width = 80,
-                Height = 30,
+                Location = new Point(358, 382), Width = 80, Height = 30,
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.FromArgb(70, 70, 72),
-                ForeColor = Color.White,
-                Font = font,
+                BackColor = Color.FromArgb(70, 70, 72), ForeColor = Color.White, Font = font,
                 DialogResult = DialogResult.Cancel
             };
             btnCancel.FlatAppearance.BorderSize = 0;
@@ -343,7 +478,7 @@ namespace ReportLineOAForDebtAndBranch
 
             Controls.AddRange(new Control[]
             {
-                tabControl, lblTestResult, btnTest, btnOk, btnCancel
+                pnlSaved, tabControl, lblTestResult, btnTest, btnOk, btnCancel
             });
         }
     }
