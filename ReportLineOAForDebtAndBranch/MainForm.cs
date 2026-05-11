@@ -22,6 +22,11 @@ namespace ReportLineOAForDebtAndBranch
         {
             InitializeComponent();
             UpdateConnectionStatus(false);
+            Load += (s, e) =>
+            {
+                // Set after form has real dimensions
+                splitOuter.SplitterDistance = (int)(splitOuter.Width * 0.72);
+            };
         }
 
         // ── Connection ──────────────────────────────────────────────────────────
