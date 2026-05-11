@@ -23,15 +23,16 @@ namespace ReportLineOAForDebtAndBranch
         // Query tabs
         private TabControl tabQueries;
 
-        // Outer splitter (left = tabs | right = column browser)
+        // Outer splitter
         private SplitContainer splitOuter;
 
-        // Column browser
-        private Panel pnlColumnBrowser;
-        private Label lblColumnBrowserHeader;
-        private TextBox txtTableSearch;
-        private Label lblColumnBrowserStatus;
-        private TreeView treeColumns;
+        // History panel (right side)
+        private Panel pnlHistory;
+        private Label lblHistoryHeader;
+        private Panel pnlHistoryTools;
+        private TextBox txtHistoryFilter;
+        private Button btnClearHistory;
+        private ListView lvHistory;
 
         // Status bar
         private StatusStrip statusStrip;
@@ -48,19 +49,17 @@ namespace ReportLineOAForDebtAndBranch
         {
             components = new System.ComponentModel.Container();
 
-            // ── Toolbar (top) ────────────────────────────────────────────────────
+            // ── Top toolbar ──────────────────────────────────────────────────────
             pnlToolbar = new Panel
             {
-                Dock = DockStyle.Top,
-                Height = 44,
+                Dock = DockStyle.Top, Height = 44,
                 BackColor = Color.FromArgb(37, 37, 38)
             };
 
             picStatus = new Panel
             {
                 Width = 14, Height = 14,
-                BackColor = Color.Gray,
-                Location = new Point(10, 15)
+                BackColor = Color.Gray, Location = new Point(10, 15)
             };
             picStatus.Region = System.Drawing.Region.FromHrgn(
                 CreateRoundRectRgn(0, 0, 14, 14, 14, 14));
@@ -87,10 +86,8 @@ namespace ReportLineOAForDebtAndBranch
 
             lblConnInfo = new Label
             {
-                Text = "Not connected",
-                ForeColor = Color.FromArgb(180, 180, 180),
-                Font = new Font("Segoe UI", 9f),
-                AutoSize = true, Location = new Point(228, 13)
+                Text = "Not connected", AutoSize = true, Location = new Point(228, 13),
+                ForeColor = Color.FromArgb(180, 180, 180), Font = new Font("Segoe UI", 9f)
             };
 
             pnlToolbar.Controls.AddRange(new Control[] { picStatus, btnConnect, btnDisconnect, lblConnInfo });
@@ -98,8 +95,7 @@ namespace ReportLineOAForDebtAndBranch
             // ── Query toolbar ────────────────────────────────────────────────────
             pnlQueryToolbar = new Panel
             {
-                Dock = DockStyle.Top,
-                Height = 38,
+                Dock = DockStyle.Top, Height = 38,
                 BackColor = Color.FromArgb(45, 45, 48)
             };
 
@@ -135,12 +131,11 @@ namespace ReportLineOAForDebtAndBranch
 
             var lblHint = new Label
             {
-                Text = "Tip: Select text to run partial query  |  Ctrl+W = close tab",
-                ForeColor = Color.FromArgb(110, 110, 110),
+                Text = "Ctrl+T = new tab  |  Ctrl+W = close tab",
+                ForeColor = Color.FromArgb(100, 100, 100),
                 Font = new Font("Segoe UI", 8f, FontStyle.Italic),
-                AutoSize = true, Location = new Point(402, 11)
+                AutoSize = true, Location = new Point(402, 12)
             };
-
             pnlQueryToolbar.Controls.AddRange(new Control[]
             {
                 btnExecute, btnExecuteNonQuery, btnNewTab, lblHint
@@ -154,68 +149,82 @@ namespace ReportLineOAForDebtAndBranch
             };
             tabQueries.MouseClick += tabQueries_MouseClick;
 
-            // ── Column browser ───────────────────────────────────────────────────
-            pnlColumnBrowser = new Panel
+            var pnlLeft = new Panel { Dock = DockStyle.Fill };
+            pnlLeft.Controls.Add(tabQueries);
+            pnlLeft.Controls.Add(pnlQueryToolbar);
+
+            // ── History panel (right) ────────────────────────────────────────────
+            pnlHistory = new Panel
             {
                 Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(30, 30, 30)
             };
 
-            lblColumnBrowserHeader = new Label
+            lblHistoryHeader = new Label
             {
-                Text = "Column Browser",
                 Dock = DockStyle.Top, Height = 28,
+                Text = "Query History",
                 TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
-                Padding = new Padding(6, 0, 0, 0),
+                Padding = new Padding(8, 0, 0, 0),
                 Font = new Font("Segoe UI", 9f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(200, 200, 200),
                 BackColor = Color.FromArgb(45, 45, 48)
             };
 
-            txtTableSearch = new TextBox
+            pnlHistoryTools = new Panel
             {
-                Dock = DockStyle.Top,
-                Height = 24,
+                Dock = DockStyle.Top, Height = 30,
+                BackColor = Color.FromArgb(37, 37, 38)
+            };
+
+            txtHistoryFilter = new TextBox
+            {
+                Location = new Point(4, 4), Height = 22, Width = 150,
                 Font = new Font("Segoe UI", 9f),
-                BackColor = Color.FromArgb(60, 60, 60),
-                ForeColor = Color.White,
+                BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White,
                 BorderStyle = BorderStyle.FixedSingle,
-                PlaceholderText = "Type table name + Enter to search..."
+                PlaceholderText = "Filter..."
             };
-            txtTableSearch.KeyDown += txtTableSearch_KeyDown;
+            txtHistoryFilter.TextChanged += txtHistoryFilter_TextChanged;
 
-            lblColumnBrowserStatus = new Label
+            btnClearHistory = new Button
             {
-                Dock = DockStyle.Top, Height = 20,
-                Text = "Execute a query to see columns",
-                Font = new Font("Segoe UI", 8f, FontStyle.Italic),
-                ForeColor = Color.FromArgb(120, 120, 120),
-                TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
-                Padding = new Padding(6, 0, 0, 0),
-                BackColor = Color.FromArgb(30, 30, 30)
+                Text = "Clear History", Height = 22, Width = 95,
+                Location = new Point(160, 4), FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(70, 70, 72), ForeColor = Color.FromArgb(180, 180, 180),
+                Font = new Font("Segoe UI", 8f)
             };
+            btnClearHistory.FlatAppearance.BorderSize = 0;
+            btnClearHistory.Click += btnClearHistory_Click;
 
-            treeColumns = new TreeView
+            pnlHistoryTools.Controls.AddRange(new Control[] { txtHistoryFilter, btnClearHistory });
+
+            // ── History ListView ─────────────────────────────────────────────────
+            lvHistory = new ListView
             {
                 Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                MultiSelect = false,
+                HeaderStyle = ColumnHeaderStyle.Nonclickable,
                 BackColor = Color.FromArgb(30, 30, 30),
                 ForeColor = Color.FromArgb(212, 212, 212),
                 BorderStyle = BorderStyle.None,
-                Font = new Font("Consolas", 9f),
-                ShowLines = true, ShowPlusMinus = true,
-                FullRowSelect = true, HideSelection = false
+                Font = new Font("Segoe UI", 8.5f),
+                OwnerDraw = true,
+                ShowItemToolTips = true
             };
-            treeColumns.NodeMouseDoubleClick += treeColumns_NodeMouseDoubleClick;
+            lvHistory.Columns.Add("Query", 185);
+            lvHistory.Columns.Add("Time", 55);
+            lvHistory.DrawColumnHeader  += LvHistory_DrawColumnHeader;
+            lvHistory.DrawItem          += LvHistory_DrawItem;
+            lvHistory.DrawSubItem       += LvHistory_DrawSubItem;
+            lvHistory.MouseClick        += lvHistory_MouseClick;
+            lvHistory.MouseDoubleClick  += lvHistory_MouseDoubleClick;
 
-            pnlColumnBrowser.Controls.Add(treeColumns);
-            pnlColumnBrowser.Controls.Add(lblColumnBrowserStatus);
-            pnlColumnBrowser.Controls.Add(txtTableSearch);
-            pnlColumnBrowser.Controls.Add(lblColumnBrowserHeader);
-
-            // ── Left panel ───────────────────────────────────────────────────────
-            var pnlLeft = new Panel { Dock = DockStyle.Fill };
-            pnlLeft.Controls.Add(tabQueries);
-            pnlLeft.Controls.Add(pnlQueryToolbar);
+            pnlHistory.Controls.Add(lvHistory);
+            pnlHistory.Controls.Add(pnlHistoryTools);
+            pnlHistory.Controls.Add(lblHistoryHeader);
 
             // ── Outer splitter ───────────────────────────────────────────────────
             splitOuter = new SplitContainer
@@ -225,16 +234,14 @@ namespace ReportLineOAForDebtAndBranch
                 BackColor = Color.FromArgb(30, 30, 30)
             };
             splitOuter.Panel1.Controls.Add(pnlLeft);
-            splitOuter.Panel2.Controls.Add(pnlColumnBrowser);
+            splitOuter.Panel2.Controls.Add(pnlHistory);
 
             // ── Status bar ───────────────────────────────────────────────────────
             statusStrip = new StatusStrip { BackColor = Color.FromArgb(0, 122, 204) };
             lblStatus = new ToolStripStatusLabel("Ready")
             {
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9f),
-                Spring = true,
-                TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+                ForeColor = Color.White, Font = new Font("Segoe UI", 9f),
+                Spring = true, TextAlign = System.Drawing.ContentAlignment.MiddleLeft
             };
             progressBar = new ToolStripProgressBar
             {
@@ -243,7 +250,7 @@ namespace ReportLineOAForDebtAndBranch
             };
             statusStrip.Items.AddRange(new ToolStripItem[] { lblStatus, progressBar });
 
-            // ── Assemble form ────────────────────────────────────────────────────
+            // ── Assemble ─────────────────────────────────────────────────────────
             SuspendLayout();
             Text = "SQL Query Tool";
             Size = new Size(1280, 720);

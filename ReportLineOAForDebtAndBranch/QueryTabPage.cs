@@ -19,6 +19,7 @@ namespace ReportLineOAForDebtAndBranch
         private static int _counter = 1;
 
         public QueryTabPage() : base($"Query {_counter++}") => BuildUI();
+        public QueryTabPage(string name) : base(name) => BuildUI();
 
         private void BuildUI()
         {
