@@ -19,6 +19,7 @@ namespace ReportLineOAForDebtAndBranch
         private Button btnExecute;
         private Button btnExecuteNonQuery;
         private Button btnNewTab;
+        private NumericUpDown numTimeout;
 
         // Query tabs
         private TabControl tabQueries;
@@ -129,16 +130,40 @@ namespace ReportLineOAForDebtAndBranch
             btnNewTab.FlatAppearance.BorderSize = 0;
             btnNewTab.Click += btnNewTab_Click;
 
+            // Timeout setting
+            var lblTimeout = new Label
+            {
+                Text = "Timeout:", AutoSize = true, Location = new Point(406, 12),
+                ForeColor = Color.FromArgb(160, 160, 160), Font = new Font("Segoe UI", 9f)
+            };
+
+            numTimeout = new NumericUpDown
+            {
+                Location = new Point(462, 6), Width = 62, Height = 24,
+                Minimum = 10, Maximum = 7200, Value = 300, Increment = 30,
+                BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f), BorderStyle = BorderStyle.FixedSingle,
+                TextAlign = HorizontalAlignment.Center
+            };
+
+            var lblSec = new Label
+            {
+                Text = "s", AutoSize = true, Location = new Point(528, 12),
+                ForeColor = Color.FromArgb(160, 160, 160), Font = new Font("Segoe UI", 9f)
+            };
+
             var lblHint = new Label
             {
-                Text = "Ctrl+T = new tab  |  Ctrl+W = close tab",
-                ForeColor = Color.FromArgb(100, 100, 100),
+                Text = "Ctrl+T = new tab  |  Ctrl+W = close",
+                ForeColor = Color.FromArgb(90, 90, 90),
                 Font = new Font("Segoe UI", 8f, FontStyle.Italic),
-                AutoSize = true, Location = new Point(402, 12)
+                AutoSize = true, Location = new Point(548, 12)
             };
+
             pnlQueryToolbar.Controls.AddRange(new Control[]
             {
-                btnExecute, btnExecuteNonQuery, btnNewTab, lblHint
+                btnExecute, btnExecuteNonQuery, btnNewTab,
+                lblTimeout, numTimeout, lblSec, lblHint
             });
 
             // ── Query tabs ───────────────────────────────────────────────────────

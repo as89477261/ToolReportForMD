@@ -212,12 +212,14 @@ namespace ReportLineOAForDebtAndBranch
             }
         }
 
+        private int TimeoutSeconds => (int)numTimeout.Value;
+
         private DataSet ExecuteQuery(string sql)
         {
             var ds = new DataSet();
             using var conn = new SqlConnection(_connectionString);
             conn.Open();
-            using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 60 };
+            using var cmd = new SqlCommand(sql, conn) { CommandTimeout = TimeoutSeconds };
             using var adapter = new SqlDataAdapter(cmd);
             adapter.Fill(ds);
             return ds;
@@ -243,7 +245,7 @@ namespace ReportLineOAForDebtAndBranch
                 {
                     using var conn = new SqlConnection(_connectionString);
                     conn.Open();
-                    using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 60 };
+                    using var cmd = new SqlCommand(sql, conn) { CommandTimeout = TimeoutSeconds };
                     return cmd.ExecuteNonQuery();
                 });
                 sw.Stop();
@@ -299,21 +301,34 @@ namespace ReportLineOAForDebtAndBranch
 
             foreach (var entry in ordered)
             {
-                string preview = entry.Sql.Trim().Replace("\r\n", " ").Replace("\n", " ");
-                if (preview.Length > 80) preview = preview[..80] + "…";
+                bool hasLabel = !string.IsNullOrEmpty(entry.Label);
 
-                string prefix = entry.IsPinned ? "📌 " : "    ";
-
+                // Filter: match label OR sql
                 if (!string.IsNullOrEmpty(filter) &&
-                    !entry.Sql.ToLower().Contains(filter)) continue;
+                    !entry.Sql.ToLower().Contains(filter) &&
+                    !(entry.Label?.ToLower().Contains(filter) ?? false)) continue;
 
-                var item = new ListViewItem(prefix + preview)
+                string pin     = entry.IsPinned ? "📌 " : "    ";
+                string display = hasLabel
+                    ? $"{pin}🏷 {entry.Label}"
+                    : pin + entry.Sql.Trim().Replace("\r\n", " ").Replace("\n", " ") is var p
+                        ? (p.Length > 80 ? p[..80] + "…" : p)
+                        : "";
+
+                // ToolTip shows full SQL always
+                string tooltip = hasLabel
+                    ? $"{entry.Label}\n\n{entry.Sql}"
+                    : entry.Sql;
+
+                var color = hasLabel
+                    ? Color.FromArgb(140, 210, 255)          // light blue = has label
+                    : entry.IsPinned
+                        ? Color.FromArgb(255, 200, 50)        // gold = pinned
+                        : Color.FromArgb(212, 212, 212);      // normal
+
+                var item = new ListViewItem(display)
                 {
-                    Tag         = entry,
-                    ToolTipText = entry.Sql,
-                    ForeColor   = entry.IsPinned
-                        ? Color.FromArgb(255, 200, 50)
-                        : Color.FromArgb(212, 212, 212)
+                    Tag = entry, ToolTipText = tooltip, ForeColor = color
                 };
                 item.SubItems.Add(HistoryStore.RelativeTime(entry.ExecutedAt));
                 lvHistory.Items.Add(item);
@@ -365,6 +380,21 @@ namespace ReportLineOAForDebtAndBranch
                 HistoryStore.SetPinned(entry.Id, !entry.IsPinned);
                 int idx = _history.FindIndex(h => h.Id == entry.Id);
                 if (idx >= 0) _history[idx] = _history[idx] with { IsPinned = !entry.IsPinned };
+                RefreshHistoryList();
+            });
+
+            // Rename / label
+            string renameLabel = string.IsNullOrEmpty(entry.Label) ? "🏷 Set Name..." : $"🏷 Rename \"{entry.Label}\"...";
+            menu.Items.Add(renameLabel, null, (s, _) =>
+            {
+                string? newLabel = SimplePrompt("Set Name", "Name (leave blank to clear):", entry.Label ?? "");
+                if (newLabel == null) return;   // cancelled
+                HistoryStore.SetLabel(entry.Id, newLabel);
+                int idx = _history.FindIndex(h => h.Id == entry.Id);
+                if (idx >= 0) _history[idx] = _history[idx] with
+                {
+                    Label = string.IsNullOrWhiteSpace(newLabel) ? null : newLabel.Trim()
+                };
                 RefreshHistoryList();
             });
 
@@ -432,7 +462,6 @@ namespace ReportLineOAForDebtAndBranch
             if (e.Item == null) return;
 
             bool selected = e.Item.Selected;
-            bool pinned   = e.Item.Tag is HistoryEntry h && h.IsPinned;
 
             var bgColor = selected
                 ? Color.FromArgb(0, 122, 204)
@@ -440,9 +469,8 @@ namespace ReportLineOAForDebtAndBranch
                     ? Color.FromArgb(30, 30, 30)
                     : Color.FromArgb(35, 35, 37);
 
-            var fgColor = selected ? Color.White
-                : pinned ? Color.FromArgb(255, 200, 50)
-                : Color.FromArgb(210, 210, 210);
+            // Respect the per-item color set during refresh (gold=pinned, blue=labeled, normal)
+            var fgColor = selected ? Color.White : e.Item.ForeColor;
 
             using var bgBrush = new SolidBrush(bgColor);
             e.Graphics.FillRectangle(bgBrush, e.Bounds);

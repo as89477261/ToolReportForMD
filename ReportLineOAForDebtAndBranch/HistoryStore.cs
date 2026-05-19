@@ -9,7 +9,8 @@ namespace ReportLineOAForDebtAndBranch
         string Id,
         string Sql,
         DateTime ExecutedAt,
-        bool IsPinned
+        bool IsPinned,
+        string? Label = null   // user-defined display name
     );
 
     public static class HistoryStore
@@ -85,6 +86,15 @@ namespace ReportLineOAForDebtAndBranch
         {
             var list = Load();
             list.RemoveAll(e => e.Id == id);
+            Save(list);
+        }
+
+        public static void SetLabel(string id, string? label)
+        {
+            var list = Load();
+            int idx  = list.FindIndex(e => e.Id == id);
+            if (idx < 0) return;
+            list[idx] = list[idx] with { Label = string.IsNullOrWhiteSpace(label) ? null : label.Trim() };
             Save(list);
         }
 
