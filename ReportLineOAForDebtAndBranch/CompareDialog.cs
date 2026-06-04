@@ -105,7 +105,7 @@ namespace ReportLineOAForDebtAndBranch
             grpFile.Controls.AddRange(new Control[] { txtFile, btnBrowse, lblSheet, cboSheet });
 
             // ── Column mapping ───────────────────────────────────────────────────
-            var grpMap = MakeGroup("Column Mapping  (◉ = Key column used for row matching, row order if none)", 8, 98);
+            var grpMap = MakeGroup("Column Mapping  (◉ = Key → match by value, ignores row order  |  no key → match by row position)", 8, 98);
             grpMap.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
 
             var hRow = new Panel { Location = new Point(6, 18), Height = 18, BackColor = Color.Transparent };
@@ -426,12 +426,10 @@ namespace ReportLineOAForDebtAndBranch
                     if (!lookup.ContainsKey(k)) lookup[k] = er;
                 }
 
-                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
+                // Query is master — iterate all query rows, look up Excel by key value (order-independent)
                 foreach (DataRow qr in _queryData.Rows)
                 {
                     string key = qr[keyMap.QCol]?.ToString()?.Trim() ?? "";
-                    seen.Add(key);
                     var row = dt.NewRow();
                     row[keyMap.QCol + " (Key)"] = key;
 
@@ -452,38 +450,31 @@ namespace ReportLineOAForDebtAndBranch
                     }
                     else
                     {
+                        // Query row has no matching row in Excel
                         row["Status"] = "⚠ Not in Excel";
                         foreach (var m in nonKey)
                             row[m.QCol + " (Query)"] = qr[m.QCol]?.ToString() ?? "";
                     }
                     dt.Rows.Add(row);
                 }
-
-                // Excel rows not found in query
-                foreach (DataRow er in _excelData!.Rows)
-                {
-                    string key = er[keyMap.ECol]?.ToString()?.Trim() ?? "";
-                    if (seen.Contains(key)) continue;
-                    var row = dt.NewRow();
-                    row["Status"]                  = "⚠ Not in Query";
-                    row[keyMap.QCol + " (Key)"]    = key;
-                    foreach (var m in nonKey)
-                        row[m.ECol + " (Excel)"] = er[m.ECol]?.ToString() ?? "";
-                    dt.Rows.Add(row);
-                }
+                // Excel rows that have no matching query row are NOT shown — Query is the master
             }
             else
             {
-                // Row-order comparison
-                int maxRows = Math.Max(_queryData.Rows.Count, _excelData!.Rows.Count);
-                for (int i = 0; i < maxRows; i++)
+                // No key selected → row-order comparison, Query is still master
+                // Only iterate query rows; Excel rows beyond query count are ignored
+                for (int i = 0; i < _queryData.Rows.Count; i++)
                 {
-                    bool hasQ = i < _queryData.Rows.Count;
-                    bool hasE = i < _excelData.Rows.Count;
-                    var  row  = dt.NewRow();
+                    var row = dt.NewRow();
 
-                    if (!hasQ) { row["Status"] = "⚠ Not in Query"; dt.Rows.Add(row); continue; }
-                    if (!hasE) { row["Status"] = "⚠ Not in Excel"; dt.Rows.Add(row); continue; }
+                    if (i >= _excelData!.Rows.Count)
+                    {
+                        row["Status"] = "⚠ Not in Excel";
+                        foreach (var m in mappings)
+                            row[m.QCol + " (Query)"] = _queryData.Rows[i][m.QCol]?.ToString() ?? "";
+                        dt.Rows.Add(row);
+                        continue;
+                    }
 
                     var qr = _queryData.Rows[i];
                     var er = _excelData.Rows[i];
@@ -502,6 +493,7 @@ namespace ReportLineOAForDebtAndBranch
                     row["Status"] = allMatch ? "✅ Match" : "❌ Mismatch";
                     dt.Rows.Add(row);
                 }
+                // Excel rows beyond query count are NOT shown — Query is the master
             }
 
             return dt;
@@ -536,12 +528,18 @@ namespace ReportLineOAForDebtAndBranch
         private void UpdateSummary()
         {
             if (_result == null) return;
-            int total    = _result.Rows.Count;
-            int match    = _result.AsEnumerable().Count(r => r["Status"].ToString() == "✅ Match");
-            int mismatch = _result.AsEnumerable().Count(r => r["Status"].ToString() == "❌ Mismatch");
-            int other    = total - match - mismatch;
+            int total       = _result.Rows.Count;
+            int match       = _result.AsEnumerable().Count(r => r["Status"].ToString() == "✅ Match");
+            int mismatch    = _result.AsEnumerable().Count(r => r["Status"].ToString() == "❌ Mismatch");
+            int notInExcel  = total - match - mismatch;
 
-            lblSummary.Text = $"Total: {total}    ✅ Match: {match}    ❌ Mismatch: {mismatch}    ⚠ Not found: {other}";
+            lblSummary.Text =
+                $"Query rows: {total}    " +
+                $"✅ Match: {match}    " +
+                $"❌ Mismatch: {mismatch}    " +
+                $"⚠ Not in Excel: {notInExcel}    " +
+                "(Query = master — Excel rows with no matching Query row are excluded)";
+
             lblSummary.ForeColor = mismatch > 0
                 ? Color.FromArgb(255, 130, 130)
                 : Color.FromArgb(100, 220, 100);
