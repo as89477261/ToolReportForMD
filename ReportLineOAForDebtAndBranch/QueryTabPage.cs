@@ -62,15 +62,28 @@ namespace ReportLineOAForDebtAndBranch
             var btnExport = MakeBtn("Export CSV", Color.FromArgb(70, 70, 72), 70, 4, 90);
             btnExport.Click += (s, e) => ExportCsv();
 
+            var btnCompare = MakeBtn("⇄ Compare Excel", Color.FromArgb(40, 80, 110), 168, 4, 130);
+            btnCompare.Click += (s, e) =>
+            {
+                if (Grid.DataSource is not DataTable dt || dt.Rows.Count == 0)
+                {
+                    MessageBox.Show("Execute a query first to get data for comparison.",
+                        "No Data", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                using var dlg = new CompareDialog(dt);
+                dlg.ShowDialog(FindForm());
+            };
+
             LblRowCount = new Label
             {
                 AutoSize = true,
-                Location = new Point(170, 9),
+                Location = new Point(306, 9),
                 Font = new Font("Segoe UI", 8.5f),
                 ForeColor = Color.FromArgb(160, 160, 160)
             };
 
-            pnlResultsToolbar.Controls.AddRange(new Control[] { btnClear, btnExport, LblRowCount });
+            pnlResultsToolbar.Controls.AddRange(new Control[] { btnClear, btnExport, btnCompare, LblRowCount });
 
             // ── DataGridView ─────────────────────────────────────────────────────
             Grid = new DataGridView
