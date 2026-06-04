@@ -500,8 +500,11 @@ namespace ReportLineOAForDebtAndBranch
                     FillExtraQuery(row, qr, extraQuery);
 
                     if (lookup.TryGetValue(key, out var er))
-                        FillComparedRow(row, qr, er, nonKey, extraExcel, out bool allMatch,
+                    {
+                        FillComparedRow(row, qr, er, nonKey, out bool allMatch,
                             queryColSuffix: " (Query)", excelColSuffix: " (Excel)");
+                        FillExtraExcel(row, er, extraExcel);
+                    }
                     else
                     {
                         row["Status"] = "⚠ Not in Excel";
@@ -525,8 +528,9 @@ namespace ReportLineOAForDebtAndBranch
                         foreach (var m in mappings) row[m.QCol + " (Query)"] = qr[m.QCol]?.ToString() ?? "";
                         dt.Rows.Add(row); continue;
                     }
-                    FillComparedRow(row, qr, _excelData.Rows[i], mappings, extraExcel, out _,
+                    FillComparedRow(row, qr, _excelData.Rows[i], mappings, out _,
                         queryColSuffix: " (Query)", excelColSuffix: " (Excel)");
+                    FillExtraExcel(row, _excelData.Rows[i], extraExcel);
                     dt.Rows.Add(row);
                 }
             }
@@ -559,8 +563,11 @@ namespace ReportLineOAForDebtAndBranch
                     FillExtraExcel(row, er, extraExcel);
 
                     if (lookup.TryGetValue(key, out var qr))
-                        FillComparedRow(row, qr, er, nonKey, extraQuery, out bool allMatch,
+                    {
+                        FillComparedRow(row, qr, er, nonKey, out bool allMatch,
                             queryColSuffix: " (Query)", excelColSuffix: " (Excel)");
+                        FillExtraQuery(row, qr, extraQuery);
+                    }
                     else
                     {
                         row["Status"] = "⚠ Not in Query";
@@ -584,8 +591,9 @@ namespace ReportLineOAForDebtAndBranch
                         foreach (var m in mappings) row[m.ECol + " (Excel)"] = er[m.ECol]?.ToString() ?? "";
                         dt.Rows.Add(row); continue;
                     }
-                    FillComparedRow(row, _queryData.Rows[i], er, mappings, extraQuery, out _,
+                    FillComparedRow(row, _queryData.Rows[i], er, mappings, out _,
                         queryColSuffix: " (Query)", excelColSuffix: " (Excel)");
+                    FillExtraQuery(row, _queryData.Rows[i], extraQuery);
                     dt.Rows.Add(row);
                 }
             }
@@ -629,7 +637,7 @@ namespace ReportLineOAForDebtAndBranch
 
         private void FillComparedRow(DataRow row, DataRow qr, DataRow er,
             List<(string QCol, string ECol, bool IsKey)> cols,
-            List<string> extraOther, out bool allMatch,
+            out bool allMatch,
             string queryColSuffix, string excelColSuffix)
         {
             allMatch = true;
