@@ -851,8 +851,17 @@ WHERE TABLE_SCHEMA='{s}' AND TABLE_NAME='{t}' ORDER BY ORDINAL_POSITION";
 
         private static async Task<string?> FetchProcDefAsync(SqlConnection cn, string db, string sch, string proc)
         {
-            using var cmd = new SqlCommand(
-                $"SELECT OBJECT_DEFINITION(OBJECT_ID('[{db}].[{sch}].[{proc}]'))", cn);
+            // OBJECT_DEFINITION(OBJECT_ID()) does not work cross-database when connected to master.
+            // Use 3-part sys.sql_modules + sys.objects + sys.schemas instead.
+            string s = sch.Replace("'", "''");
+            string p = proc.Replace("'", "''");
+            string sql = $@"
+SELECT m.definition
+FROM [{db}].sys.sql_modules  m
+JOIN [{db}].sys.objects       o ON o.object_id  = m.object_id
+JOIN [{db}].sys.schemas       s ON s.schema_id  = o.schema_id
+WHERE o.name = '{p}' AND s.name = '{s}'";
+            using var cmd = new SqlCommand(sql, cn);
             var v = await cmd.ExecuteScalarAsync();
             return v == DBNull.Value || v == null ? null : v.ToString();
         }
