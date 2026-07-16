@@ -505,6 +505,12 @@ namespace ReportLineOAForDebtAndBranch
             dlg.ShowDialog(this);
         }
 
+        private void btnDeployCheck_Click(object sender, EventArgs e)
+        {
+            using var dlg = new DeploymentCheckerDialog(_connectionString);
+            dlg.ShowDialog(this);
+        }
+
         private void UpdateConnectionStatus(bool connected)
         {
             picStatus.BackColor        = connected ? Color.LimeGreen : Color.Gray;
@@ -512,6 +518,7 @@ namespace ReportLineOAForDebtAndBranch
             btnExecute.Enabled         = connected;
             btnExecuteNonQuery.Enabled = connected;
             btnCompareDb.Enabled       = connected;
+            btnDeployCheck.Enabled     = connected;
         }
 
         private void SetExecutingState(bool executing)

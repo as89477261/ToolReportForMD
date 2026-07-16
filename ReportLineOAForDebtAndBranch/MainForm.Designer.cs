@@ -14,6 +14,7 @@ namespace ReportLineOAForDebtAndBranch
         private Button btnConnect;
         private Button btnDisconnect;
         private Button btnCompareDb;
+        private Button btnDeployCheck;
 
         // Query toolbar
         private Panel pnlQueryToolbar;
@@ -102,7 +103,18 @@ namespace ReportLineOAForDebtAndBranch
             btnCompareDb.FlatAppearance.BorderSize = 0;
             btnCompareDb.Click += btnCompareDb_Click;
 
-            pnlToolbar.Controls.AddRange(new Control[] { picStatus, btnConnect, btnDisconnect, lblConnInfo, btnCompareDb });
+            btnDeployCheck = new Button
+            {
+                Text = "📋 Deploy Check", Width = 130, Height = 30, Location = new Point(628, 7),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(60, 45, 10), ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f), Enabled = false
+            };
+            btnDeployCheck.FlatAppearance.BorderSize = 0;
+            btnDeployCheck.Click += btnDeployCheck_Click;
+
+            pnlToolbar.Controls.AddRange(new Control[]
+                { picStatus, btnConnect, btnDisconnect, lblConnInfo, btnCompareDb, btnDeployCheck });
 
             // ── Query toolbar ────────────────────────────────────────────────────
             pnlQueryToolbar = new Panel
