@@ -13,6 +13,7 @@ namespace ReportLineOAForDebtAndBranch
         private Label lblConnInfo;
         private Button btnConnect;
         private Button btnDisconnect;
+        private Button btnCompareDb;
 
         // Query toolbar
         private Panel pnlQueryToolbar;
@@ -91,7 +92,17 @@ namespace ReportLineOAForDebtAndBranch
                 ForeColor = Color.FromArgb(180, 180, 180), Font = new Font("Segoe UI", 9f)
             };
 
-            pnlToolbar.Controls.AddRange(new Control[] { picStatus, btnConnect, btnDisconnect, lblConnInfo });
+            btnCompareDb = new Button
+            {
+                Text = "⇄ Compare DB", Width = 120, Height = 30, Location = new Point(500, 7),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(40, 70, 100), ForeColor = Color.White,
+                Font = new Font("Segoe UI", 9f), Enabled = false
+            };
+            btnCompareDb.FlatAppearance.BorderSize = 0;
+            btnCompareDb.Click += btnCompareDb_Click;
+
+            pnlToolbar.Controls.AddRange(new Control[] { picStatus, btnConnect, btnDisconnect, lblConnInfo, btnCompareDb });
 
             // ── Query toolbar ────────────────────────────────────────────────────
             pnlQueryToolbar = new Panel

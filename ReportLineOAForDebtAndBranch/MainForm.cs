@@ -499,12 +499,19 @@ namespace ReportLineOAForDebtAndBranch
 
         // ── Helpers ─────────────────────────────────────────────────────────────
 
+        private void btnCompareDb_Click(object sender, EventArgs e)
+        {
+            using var dlg = new CompareDbDialog(_connectionString);
+            dlg.ShowDialog(this);
+        }
+
         private void UpdateConnectionStatus(bool connected)
         {
-            picStatus.BackColor    = connected ? Color.LimeGreen : Color.Gray;
-            btnDisconnect.Enabled  = connected;
-            btnExecute.Enabled     = connected;
+            picStatus.BackColor        = connected ? Color.LimeGreen : Color.Gray;
+            btnDisconnect.Enabled      = connected;
+            btnExecute.Enabled         = connected;
             btnExecuteNonQuery.Enabled = connected;
+            btnCompareDb.Enabled       = connected;
         }
 
         private void SetExecutingState(bool executing)
