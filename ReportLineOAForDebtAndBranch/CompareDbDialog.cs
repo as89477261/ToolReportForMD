@@ -575,7 +575,9 @@ namespace ReportLineOAForDebtAndBranch
             var leftDt  = await FetchTableAsync(lCn, lDb, lSch, lObj);
             var rightDt = await FetchTableAsync(rCn, rDb, rSch, rObj);
 
-            _result = BuildDataCompare(leftDt, rightDt, keyL, keyR, lObj, rObj);
+            string leftLabel  = MakeLabel(lObj, lDb, rObj, rDb, _leftConnStr, _rightConnStr);
+            string rightLabel = MakeLabel(rObj, rDb, lObj, lDb, _rightConnStr, _leftConnStr);
+            _result = BuildDataCompare(leftDt, rightDt, keyL, keyR, leftLabel, rightLabel);
             ShowGrid();
 
             int total    = _result.Rows.Count;
@@ -728,7 +730,9 @@ namespace ReportLineOAForDebtAndBranch
             var leftCols  = await FetchColumnsAsync(lCn, lDb, lSch, lObj);
             var rightCols = await FetchColumnsAsync(rCn, rDb, rSch, rObj);
 
-            _result = BuildStructureCompare(leftCols, rightCols, lObj, rObj);
+            string leftLabel  = MakeLabel(lObj, lDb, rObj, rDb, _leftConnStr, _rightConnStr);
+            string rightLabel = MakeLabel(rObj, rDb, lObj, lDb, _rightConnStr, _leftConnStr);
+            _result = BuildStructureCompare(leftCols, rightCols, leftLabel, rightLabel);
             ShowGrid();
 
             int same  = CountStatus("✅ Same");
@@ -1023,6 +1027,25 @@ WHERE TABLE_SCHEMA='{s}' AND TABLE_NAME='{t}' ORDER BY ORDINAL_POSITION";
         {
             try { return new SqlConnectionStringBuilder(cs).DataSource; }
             catch { return "?"; }
+        }
+
+        // Build a column label that is unique even when both sides share the same object name.
+        // If obj names differ → use just the obj name.
+        // If obj names are same but db differs → use "db.obj".
+        // If obj names AND db are same → use "server.db.obj".
+        private static string MakeLabel(string myObj, string myDb,
+            string otherObj, string otherDb, string myCs, string otherCs)
+        {
+            if (!string.Equals(myObj, otherObj, StringComparison.OrdinalIgnoreCase))
+                return myObj;
+            if (!string.Equals(myDb, otherDb, StringComparison.OrdinalIgnoreCase))
+                return $"{myDb}.{myObj}";
+            string mySrv    = ServerLabel(myCs);
+            string otherSrv = ServerLabel(otherCs);
+            if (!string.Equals(mySrv, otherSrv, StringComparison.OrdinalIgnoreCase))
+                return $"{mySrv}.{myDb}.{myObj}";
+            // Absolute last resort — shouldn't normally happen
+            return $"{myObj} (Source)";
         }
 
         private static RadioButton MakeRdo(string text, int x, int y) => new RadioButton
