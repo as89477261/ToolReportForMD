@@ -14,7 +14,9 @@ namespace ReportLineOAForDebtAndBranch
 {
     public class CompareDbDialog : Form
     {
-        private readonly string _connectionString;
+        // Each side has its own connection string
+        private string _leftConnStr;
+        private string _rightConnStr;
 
         // Mode
         private RadioButton rdoData      = null!;
@@ -22,8 +24,9 @@ namespace ReportLineOAForDebtAndBranch
         private RadioButton rdoProc      = null!;
 
         // Source / Target selectors
-        private ComboBox cboLeftDb  = null!, cboLeftSchema  = null!, cboLeftObj  = null!;
-        private ComboBox cboRightDb = null!, cboRightSchema = null!, cboRightObj = null!;
+        private ComboBox cboLeftConn  = null!, cboLeftDb  = null!, cboLeftSchema  = null!, cboLeftObj  = null!;
+        private ComboBox cboRightConn = null!, cboRightDb = null!, cboRightSchema = null!, cboRightObj = null!;
+        private Label    lblLeftServer = null!, lblRightServer = null!;
 
         // Key panel (data mode)
         private Panel    pnlKey     = null!;
@@ -33,17 +36,18 @@ namespace ReportLineOAForDebtAndBranch
         private Button btnCompare = null!;
 
         // Results
-        private Label       lblSummary   = null!;
+        private Label        lblSummary  = null!;
         private DataGridView grid        = null!;
         private RichTextBox  txtDiff     = null!;
-        private Button btnExportCsv      = null!;
-        private Button btnExportXlsx     = null!;
+        private Button       btnExportCsv  = null!;
+        private Button       btnExportXlsx = null!;
 
         private DataTable? _result;
 
         public CompareDbDialog(string connectionString)
         {
-            _connectionString = connectionString;
+            _leftConnStr  = connectionString;
+            _rightConnStr = connectionString;
             BuildUI();
         }
 
@@ -52,20 +56,20 @@ namespace ReportLineOAForDebtAndBranch
         private void BuildUI()
         {
             Text          = "Compare Database Objects";
-            Size          = new Size(1160, 800);
-            MinimumSize   = new Size(900, 640);
+            Size          = new Size(1200, 840);
+            MinimumSize   = new Size(950, 680);
             StartPosition = FormStartPosition.CenterParent;
             BackColor     = Color.FromArgb(30, 30, 30);
 
-            // Mode bar
+            // ── Mode bar ─────────────────────────────────────────────────────────
             var pnlMode = new Panel
             {
                 Dock = DockStyle.Top, Height = 40,
                 BackColor = Color.FromArgb(45, 45, 48)
             };
-            rdoData      = MakeRdo("Table Data",        80,  10);
-            rdoStructure = MakeRdo("Table Structure",   210, 10);
-            rdoProc      = MakeRdo("Stored Procedure",  360, 10);
+            rdoData      = MakeRdo("Table Data",       80,  10);
+            rdoStructure = MakeRdo("Table Structure",  210, 10);
+            rdoProc      = MakeRdo("Stored Procedure", 360, 10);
             rdoData.Checked = true;
 
             rdoData.CheckedChanged      += (s, e) => { if (rdoData.Checked)      ModeChanged(); };
@@ -73,56 +77,58 @@ namespace ReportLineOAForDebtAndBranch
             rdoProc.CheckedChanged      += (s, e) => { if (rdoProc.Checked)      ModeChanged(); };
 
             pnlMode.Controls.AddRange(new Control[]
-            {
-                MakeLabel("Compare:", 10, 12), rdoData, rdoStructure, rdoProc
-            });
+                { MakeLabel("Compare:", 10, 12), rdoData, rdoStructure, rdoProc });
 
-            // Sources row
+            // ── Sources row ───────────────────────────────────────────────────────
             var pnlSources = new Panel
             {
-                Dock = DockStyle.Top, Height = 156,
+                Dock = DockStyle.Top, Height = 190,
                 BackColor = Color.FromArgb(37, 37, 38)
             };
 
             var grpLeft  = MakeGroup("Source", 8, 8);
-            BuildSourcePanel(grpLeft,  out cboLeftDb,  out cboLeftSchema,  out cboLeftObj,  isLeft: true);
+            BuildSourcePanel(grpLeft,
+                out cboLeftConn,  out lblLeftServer,
+                out cboLeftDb,    out cboLeftSchema, out cboLeftObj,
+                isLeft: true);
 
             var grpRight = MakeGroup("Target", 0, 8);
-            BuildSourcePanel(grpRight, out cboRightDb, out cboRightSchema, out cboRightObj, isLeft: false);
+            BuildSourcePanel(grpRight,
+                out cboRightConn, out lblRightServer,
+                out cboRightDb,   out cboRightSchema, out cboRightObj,
+                isLeft: false);
 
-            // Key panel
+            // ── Key panel ────────────────────────────────────────────────────────
             pnlKey = new Panel { Location = new Point(0, 8), BackColor = Color.FromArgb(37, 37, 38) };
-            var grpKey = MakeGroup("Key Columns (for row matching — leave blank = row-position mode)", 0, 0);
+            var grpKey = MakeGroup("Key Columns (for row matching)", 0, 0);
             grpKey.Dock = DockStyle.Fill;
-
             cboKeyLeft  = MakeCombo(8, 36, 200);
             cboKeyRight = MakeCombo(8, 78, 200);
             grpKey.Controls.Add(MakeSmLabel("Source key column:", 8, 20, 180));
             grpKey.Controls.Add(cboKeyLeft);
             grpKey.Controls.Add(MakeSmLabel("Target key column:", 8, 62, 180));
             grpKey.Controls.Add(cboKeyRight);
-            grpKey.Controls.Add(MakeSmLabel("Without a key, rows are matched by position", 8, 112, 230));
+            grpKey.Controls.Add(MakeSmLabel("Leave blank = compare by row position", 8, 116, 240));
             pnlKey.Controls.Add(grpKey);
 
             pnlSources.Controls.AddRange(new Control[] { grpLeft, grpRight, pnlKey });
             pnlSources.Resize += (s, e) =>
             {
                 int w = (int)((pnlSources.ClientSize.Width - 32) * 0.38);
-                grpLeft.Width  = w; grpLeft.Height  = pnlSources.ClientSize.Height - 16;
-                grpRight.Width = w; grpRight.Height = grpLeft.Height;
+                int h = pnlSources.ClientSize.Height - 16;
+                grpLeft.Width  = w; grpLeft.Height  = h;
+                grpRight.Width = w; grpRight.Height = h;
                 grpRight.Location = new Point(grpLeft.Right + 8, 8);
                 pnlKey.Location   = new Point(grpRight.Right + 8, 8);
                 pnlKey.Width      = pnlSources.ClientSize.Width - pnlKey.Left - 8;
-                pnlKey.Height     = grpLeft.Height;
+                pnlKey.Height     = h;
                 foreach (var cb in new[] { cboKeyLeft, cboKeyRight })
                     cb.Width = pnlKey.ClientSize.Width - 20;
-                foreach (Control c in grpLeft.Controls)
-                    if (c is ComboBox cb2) cb2.Width = grpLeft.ClientSize.Width - 98;
-                foreach (Control c in grpRight.Controls)
-                    if (c is ComboBox cb2) cb2.Width = grpRight.ClientSize.Width - 98;
+                ResizeSourceCombos(grpLeft);
+                ResizeSourceCombos(grpRight);
             };
 
-            // Action bar
+            // ── Action bar ───────────────────────────────────────────────────────
             var pnlAction = new Panel
             {
                 Dock = DockStyle.Top, Height = 38,
@@ -135,17 +141,17 @@ namespace ReportLineOAForDebtAndBranch
             pnlAction.Controls.Add(btnCompare);
             pnlAction.Resize += (s, e) => btnCompare.Location = new Point(pnlAction.Width - 152, 5);
 
-            // Summary bar
+            // ── Summary bar ──────────────────────────────────────────────────────
             lblSummary = new Label
             {
                 Dock = DockStyle.Top, Height = 28,
-                Text = "Select source and target objects, then click Compare.",
+                Text = "Select source and target, then click Compare.",
                 Font = new Font("Segoe UI", 9f), ForeColor = Color.FromArgb(150, 150, 150),
                 TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(6, 0, 0, 0),
                 BackColor = Color.FromArgb(45, 45, 48)
             };
 
-            // DataGridView
+            // ── DataGridView ─────────────────────────────────────────────────────
             grid = new DataGridView
             {
                 Dock = DockStyle.Fill, ReadOnly = true, AllowUserToAddRows = false,
@@ -166,7 +172,7 @@ namespace ReportLineOAForDebtAndBranch
             grid.RowPrePaint += Grid_RowPrePaint;
             grid.DataError   += (s, e) => e.Cancel = true;
 
-            // Diff viewer (stored proc mode)
+            // ── Diff viewer (stored proc) ─────────────────────────────────────────
             txtDiff = new RichTextBox
             {
                 Dock = DockStyle.Fill, ReadOnly = true, Visible = false,
@@ -176,20 +182,20 @@ namespace ReportLineOAForDebtAndBranch
                 WordWrap = false
             };
 
-            // Bottom bar
+            // ── Bottom bar ────────────────────────────────────────────────────────
             var pnlBottom = new Panel
             {
                 Dock = DockStyle.Bottom, Height = 38,
                 BackColor = Color.FromArgb(45, 45, 48)
             };
-            btnExportCsv  = MakeBtn("Export CSV",         6,   6, 100);
+            btnExportCsv  = MakeBtn("Export CSV",          6,   6, 100);
             btnExportXlsx = MakeBtn("Export Excel (.xlsx)", 112, 6, 148);
             btnExportXlsx.BackColor = Color.FromArgb(20, 100, 45);
             btnExportCsv.Click  += (s, e) => ExportCsv();
             btnExportXlsx.Click += (s, e) => ExportExcel();
             pnlBottom.Controls.AddRange(new Control[] { btnExportCsv, btnExportXlsx });
 
-            // Assemble
+            // ── Assemble ─────────────────────────────────────────────────────────
             var pnlContent = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(30, 30, 30) };
             pnlContent.Controls.Add(grid);
             pnlContent.Controls.Add(txtDiff);
@@ -203,76 +209,173 @@ namespace ReportLineOAForDebtAndBranch
             Controls.Add(pnlMode);
             ResumeLayout();
 
-            Load += async (s, e) => await LoadDatabasesAsync();
-        }
-
-        private void BuildSourcePanel(GroupBox grp, out ComboBox cbDb, out ComboBox cbSchema,
-            out ComboBox cbObj, bool isLeft)
-        {
-            cbDb     = MakeCombo(84, 19, 200);
-            cbSchema = MakeCombo(84, 49, 200);
-            cbObj    = MakeCombo(84, 79, 200);
-
-            grp.Height = 140;
-            grp.Controls.Add(MakeSmLabel("Database:", 8, 23, 74)); grp.Controls.Add(cbDb);
-            grp.Controls.Add(MakeSmLabel("Schema:",   8, 53, 74)); grp.Controls.Add(cbSchema);
-            grp.Controls.Add(MakeSmLabel("Object:",   8, 83, 74)); grp.Controls.Add(cbObj);
-
-            // Closures
-            var myDb     = cbDb;
-            var mySch    = cbSchema;
-            var myObj    = cbObj;
-            var myIsLeft = isLeft;
-
-            cbDb.SelectedIndexChanged += async (s, e) =>
+            Load += async (s, e) =>
             {
-                if (myDb.SelectedItem == null) return;
-                await LoadSchemasAsync(myDb.SelectedItem.ToString()!, mySch);
-            };
-            cbSchema.SelectedIndexChanged += async (s, e) =>
-            {
-                if (myDb.SelectedItem == null || mySch.SelectedItem == null) return;
-                await LoadObjectsAsync(myDb.SelectedItem.ToString()!, mySch.SelectedItem.ToString()!, myObj);
-                if (myIsLeft) await PopulateKeyColumnsAsync();
-            };
-            cbObj.SelectedIndexChanged += async (s, e) =>
-            {
-                if (myIsLeft) await PopulateKeyColumnsAsync();
+                await LoadDatabasesAsync(cboLeftConn,  cboLeftDb,  lblLeftServer);
+                await LoadDatabasesAsync(cboRightConn, cboRightDb, lblRightServer);
             };
         }
 
-        // ── Database / Object Loading ────────────────────────────────────────────
+        // ── Source Panel ─────────────────────────────────────────────────────────
 
-        private async Task LoadDatabasesAsync()
+        private void BuildSourcePanel(GroupBox grp,
+            out ComboBox cbConn, out Label lblServer,
+            out ComboBox cbDb, out ComboBox cbSchema, out ComboBox cbObj,
+            bool isLeft)
         {
+            grp.Height = 175;
+
+            // Row 1: Connection selector
+            grp.Controls.Add(MakeSmLabel("Connection:", 8, 22, 80));
+
+            cbConn = new ComboBox
+            {
+                Location = new Point(88, 18), Width = 180,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                BackColor = Color.FromArgb(55, 55, 55), ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 8.5f)
+            };
+            grp.Controls.Add(cbConn);
+
+            var btnCfg = MakeBtn("⚙", 0, 17, 28);
+            btnCfg.Font    = new Font("Segoe UI", 9f);
+            btnCfg.ToolTip("Configure connection string");
+            grp.Controls.Add(btnCfg);
+
+            lblServer = new Label
+            {
+                Location = new Point(88, 44), AutoSize = false, Height = 14,
+                ForeColor = Color.FromArgb(100, 180, 100),
+                Font = new Font("Segoe UI", 7.5f, FontStyle.Italic)
+            };
+            grp.Controls.Add(lblServer);
+
+            // Row 2-4: DB / Schema / Object
+            grp.Controls.Add(MakeSmLabel("Database:", 8, 64, 78));
+            cbDb = MakeCombo(88, 60, 180);
+            grp.Controls.Add(cbDb);
+
+            grp.Controls.Add(MakeSmLabel("Schema:", 8, 96, 78));
+            cbSchema = MakeCombo(88, 92, 180);
+            grp.Controls.Add(cbSchema);
+
+            grp.Controls.Add(MakeSmLabel("Object:", 8, 128, 78));
+            cbObj = MakeCombo(88, 124, 180);
+            grp.Controls.Add(cbObj);
+
+            // Capture for closures
+            bool myIsLeft     = isLeft;
+            var  myCbConn     = cbConn;
+            var  myLblServer  = lblServer;
+            var  myCbDb       = cbDb;
+            var  myCbSchema   = cbSchema;
+            var  myCbObj      = cbObj;
+            var  myBtnCfg     = btnCfg;
+
+            // Position btnCfg to the right of cbConn (set in resize)
+            grp.Resize += (s, e) =>
+            {
+                int w = grp.ClientSize.Width - 98;
+                myCbConn.Width   = w - 34;
+                myBtnCfg.Location = new Point(myCbConn.Right + 4, 17);
+                myLblServer.Width = w;
+                myCbDb.Width = myCbSchema.Width = myCbObj.Width = w;
+            };
+
+            // Connection dropdown changed → reload databases
+            myCbConn.SelectedIndexChanged += async (s, e) =>
+            {
+                if (myCbConn.SelectedItem is not SavedConnection sc) return;
+                if (myIsLeft) _leftConnStr  = sc.ConnectionString;
+                else          _rightConnStr = sc.ConnectionString;
+                await LoadDatabasesAsync(myCbConn, myCbDb, myLblServer);
+            };
+
+            // Configure button → open connection string editor
+            myBtnCfg.Click += async (s, e) =>
+            {
+                string current = myIsLeft ? _leftConnStr : _rightConnStr;
+                string? newCs  = PromptConnectionString(current);
+                if (newCs == null) return;
+                if (myIsLeft) _leftConnStr  = newCs;
+                else          _rightConnStr = newCs;
+                await LoadDatabasesAsync(myCbConn, myCbDb, myLblServer, forceConnStr: newCs);
+            };
+
+            myCbDb.SelectedIndexChanged += async (s, e) =>
+            {
+                if (myCbDb.SelectedItem == null) return;
+                string cs = myIsLeft ? _leftConnStr : _rightConnStr;
+                await LoadSchemasAsync(cs, myCbDb.SelectedItem.ToString()!, myCbSchema);
+            };
+            myCbSchema.SelectedIndexChanged += async (s, e) =>
+            {
+                if (myCbDb.SelectedItem == null || myCbSchema.SelectedItem == null) return;
+                string cs = myIsLeft ? _leftConnStr : _rightConnStr;
+                await LoadObjectsAsync(cs, myCbDb.SelectedItem.ToString()!, myCbSchema.SelectedItem.ToString()!, myCbObj);
+                if (myIsLeft) await PopulateKeyColumnsAsync();
+            };
+            myCbObj.SelectedIndexChanged += async (s, e) =>
+            {
+                if (myIsLeft) await PopulateKeyColumnsAsync();
+            };
+        }
+
+        private static void ResizeSourceCombos(GroupBox grp)
+        {
+            int w = grp.ClientSize.Width - 98;
+            foreach (Control c in grp.Controls)
+            {
+                if (c is ComboBox cb)   cb.Width = c.Left == 88 ? w - (c.Top < 50 ? 34 : 0) : cb.Width;
+                if (c is Button btn && btn.Text == "⚙") btn.Location = new Point(grp.ClientSize.Width - 38, btn.Top);
+            }
+        }
+
+        // ── Connection Loading ────────────────────────────────────────────────────
+
+        private async Task LoadDatabasesAsync(ComboBox cbConn, ComboBox cbDb, Label lblServer,
+            string? forceConnStr = null)
+        {
+            string cs = forceConnStr ?? (cbConn == cboLeftConn ? _leftConnStr : _rightConnStr);
+
+            // Populate connection dropdown from saved connections
+            var saved = ConnectionStore.Load();
+            cbConn.Items.Clear();
+            foreach (var sc in saved) cbConn.Items.Add(sc);
+            cbConn.DisplayMember = "Name";
+            // Don't auto-select — user picks explicitly; show server info via label
+
             try
             {
-                using var cn = new SqlConnection(_connectionString);
+                using var cn = new SqlConnection(cs);
                 await cn.OpenAsync();
+
+                var b = new SqlConnectionStringBuilder(cs);
+                lblServer.Text = $"{b.DataSource}  /  {cn.Database}";
+
                 var dt = new DataTable();
                 using var da = new SqlDataAdapter(
                     "SELECT name FROM sys.databases WHERE state_desc='ONLINE' ORDER BY name", cn);
                 await Task.Run(() => da.Fill(dt));
 
-                var names   = dt.AsEnumerable().Select(r => r[0].ToString()!).ToList();
                 string curDb = cn.Database;
-
-                foreach (var cbo in new[] { cboLeftDb, cboRightDb })
-                {
-                    cbo.Items.Clear();
-                    names.ForEach(n => cbo.Items.Add(n));
-                    int idx = names.IndexOf(curDb);
-                    cbo.SelectedIndex = idx >= 0 ? idx : cbo.Items.Count > 0 ? 0 : -1;
-                }
+                cbDb.Items.Clear();
+                foreach (DataRow r in dt.Rows) cbDb.Items.Add(r[0].ToString()!);
+                int idx = cbDb.Items.IndexOf(curDb);
+                cbDb.SelectedIndex = idx >= 0 ? idx : cbDb.Items.Count > 0 ? 0 : -1;
             }
-            catch (Exception ex) { lblSummary.Text = $"Error loading databases: {ex.Message}"; }
+            catch (Exception ex)
+            {
+                lblServer.Text      = $"⚠ {ex.Message}";
+                lblServer.ForeColor = Color.FromArgb(220, 100, 100);
+            }
         }
 
-        private async Task LoadSchemasAsync(string db, ComboBox cbSchema)
+        private async Task LoadSchemasAsync(string cs, string db, ComboBox cbSchema)
         {
             try
             {
-                using var cn = new SqlConnection(_connectionString);
+                using var cn = new SqlConnection(cs);
                 await cn.OpenAsync();
                 using var cmd = new SqlCommand(
                     $"SELECT SCHEMA_NAME FROM [{db}].INFORMATION_SCHEMA.SCHEMATA ORDER BY SCHEMA_NAME", cn);
@@ -287,7 +390,7 @@ namespace ReportLineOAForDebtAndBranch
             catch { }
         }
 
-        private async Task LoadObjectsAsync(string db, string schema, ComboBox cbObj)
+        private async Task LoadObjectsAsync(string cs, string db, string schema, ComboBox cbObj)
         {
             try
             {
@@ -295,7 +398,7 @@ namespace ReportLineOAForDebtAndBranch
                 string sql = rdoProc.Checked
                     ? $"SELECT ROUTINE_NAME FROM [{db}].INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA='{sch}' AND ROUTINE_TYPE='PROCEDURE' ORDER BY ROUTINE_NAME"
                     : $"SELECT TABLE_NAME FROM [{db}].INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='{sch}' AND TABLE_TYPE='BASE TABLE' ORDER BY TABLE_NAME";
-                using var cn = new SqlConnection(_connectionString);
+                using var cn = new SqlConnection(cs);
                 await cn.OpenAsync();
                 using var cmd = new SqlCommand(sql, cn);
                 using var rd  = await cmd.ExecuteReaderAsync();
@@ -317,22 +420,90 @@ namespace ReportLineOAForDebtAndBranch
                 string db  = cboLeftDb.SelectedItem.ToString()!;
                 string sch = cboLeftSchema.SelectedItem.ToString()!.Replace("'", "''");
                 string tbl = cboLeftObj.SelectedItem.ToString()!.Replace("'", "''");
-                using var cn = new SqlConnection(_connectionString);
+                using var cn = new SqlConnection(_leftConnStr);
                 await cn.OpenAsync();
                 using var cmd = new SqlCommand(
                     $"SELECT COLUMN_NAME FROM [{db}].INFORMATION_SCHEMA.COLUMNS " +
                     $"WHERE TABLE_SCHEMA='{sch}' AND TABLE_NAME='{tbl}' ORDER BY ORDINAL_POSITION", cn);
-                using var rd  = await cmd.ExecuteReaderAsync();
+                using var rd = await cmd.ExecuteReaderAsync();
                 var cols = new List<string> { "(none — positional)" };
                 while (await rd.ReadAsync()) cols.Add(rd.GetString(0));
-                cboKeyLeft.Items.Clear();  cboKeyRight.Items.Clear();
+                cboKeyLeft.Items.Clear(); cboKeyRight.Items.Clear();
                 cols.ForEach(c => { cboKeyLeft.Items.Add(c); cboKeyRight.Items.Add(c); });
                 cboKeyLeft.SelectedIndex = cboKeyRight.SelectedIndex = 0;
             }
             catch { }
         }
 
-        // ── Mode Change ──────────────────────────────────────────────────────────
+        // ── Connection String Prompt ──────────────────────────────────────────────
+
+        private string? PromptConnectionString(string current)
+        {
+            var frm = new Form
+            {
+                Text = "Configure Connection String", Size = new Size(520, 200),
+                FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false, MinimizeBox = false, BackColor = Color.FromArgb(37, 37, 38)
+            };
+
+            var lbl = new Label
+            {
+                Text = "Connection String:", Location = new Point(10, 14), AutoSize = true,
+                ForeColor = Color.FromArgb(200, 200, 200), Font = new Font("Segoe UI", 9f)
+            };
+            var txt = new TextBox
+            {
+                Text = current, Location = new Point(10, 36), Width = 484, Height = 60,
+                Multiline = true, ScrollBars = ScrollBars.Vertical,
+                BackColor = Color.FromArgb(60, 60, 60), ForeColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle, Font = new Font("Consolas", 9f)
+            };
+
+            // Saved connections shortcut
+            var lblSaved = new Label
+            {
+                Text = "Or pick a saved connection:", Location = new Point(10, 106), AutoSize = true,
+                ForeColor = Color.FromArgb(160, 160, 160), Font = new Font("Segoe UI", 8.5f)
+            };
+            var cboSaved = new ComboBox
+            {
+                Location = new Point(10, 122), Width = 350, DropDownStyle = ComboBoxStyle.DropDownList,
+                BackColor = Color.FromArgb(55, 55, 55), ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 9f), DisplayMember = "Name"
+            };
+            foreach (var sc in ConnectionStore.Load()) cboSaved.Items.Add(sc);
+            cboSaved.SelectedIndexChanged += (s, e) =>
+            {
+                if (cboSaved.SelectedItem is SavedConnection sc) txt.Text = sc.ConnectionString;
+            };
+
+            var btnTest = MakeBtn("Test", 368, 121, 60);
+            btnTest.Click += (s, e) =>
+            {
+                try
+                {
+                    using var cn = new SqlConnection(txt.Text.Trim());
+                    cn.Open();
+                    MessageBox.Show($"Connected to {cn.DataSource}", "OK",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+
+            var btnOk     = MakeBtn("Connect", 434, 121, 72);
+            btnOk.BackColor = Color.FromArgb(0, 122, 204);
+            btnOk.DialogResult = DialogResult.OK;
+
+            frm.AcceptButton = btnOk;
+            frm.Controls.AddRange(new Control[] { lbl, txt, lblSaved, cboSaved, btnTest, btnOk });
+
+            return frm.ShowDialog(this) == DialogResult.OK ? txt.Text.Trim() : null;
+        }
+
+        // ── Mode Change ───────────────────────────────────────────────────────────
 
         private void ModeChanged()
         {
@@ -344,13 +515,15 @@ namespace ReportLineOAForDebtAndBranch
         {
             var tasks = new List<Task>();
             if (cboLeftDb.SelectedItem != null && cboLeftSchema.SelectedItem != null)
-                tasks.Add(LoadObjectsAsync(cboLeftDb.SelectedItem.ToString()!, cboLeftSchema.SelectedItem.ToString()!, cboLeftObj));
+                tasks.Add(LoadObjectsAsync(_leftConnStr,  cboLeftDb.SelectedItem.ToString()!,
+                    cboLeftSchema.SelectedItem.ToString()!,  cboLeftObj));
             if (cboRightDb.SelectedItem != null && cboRightSchema.SelectedItem != null)
-                tasks.Add(LoadObjectsAsync(cboRightDb.SelectedItem.ToString()!, cboRightSchema.SelectedItem.ToString()!, cboRightObj));
+                tasks.Add(LoadObjectsAsync(_rightConnStr, cboRightDb.SelectedItem.ToString()!,
+                    cboRightSchema.SelectedItem.ToString()!, cboRightObj));
             await Task.WhenAll(tasks);
         }
 
-        // ── Compare Dispatch ─────────────────────────────────────────────────────
+        // ── Compare Dispatch ──────────────────────────────────────────────────────
 
         private async void BtnCompare_Click(object? sender, EventArgs e)
         {
@@ -387,7 +560,7 @@ namespace ReportLineOAForDebtAndBranch
         private (string db, string sch, string obj) Right =>
             (cboRightDb.SelectedItem!.ToString()!, cboRightSchema.SelectedItem!.ToString()!, cboRightObj.SelectedItem!.ToString()!);
 
-        // ── Table Data Compare ───────────────────────────────────────────────────
+        // ── Table Data Compare ────────────────────────────────────────────────────
 
         private async Task CompareDataAsync()
         {
@@ -396,10 +569,11 @@ namespace ReportLineOAForDebtAndBranch
             string keyL = KeyColName(cboKeyLeft);
             string keyR = KeyColName(cboKeyRight);
 
-            using var cn = new SqlConnection(_connectionString);
-            await cn.OpenAsync();
-            var leftDt  = await FetchTableAsync(cn, lDb, lSch, lObj);
-            var rightDt = await FetchTableAsync(cn, rDb, rSch, rObj);
+            using var lCn = new SqlConnection(_leftConnStr);  await lCn.OpenAsync();
+            using var rCn = new SqlConnection(_rightConnStr); await rCn.OpenAsync();
+
+            var leftDt  = await FetchTableAsync(lCn, lDb, lSch, lObj);
+            var rightDt = await FetchTableAsync(rCn, rDb, rSch, rObj);
 
             _result = BuildDataCompare(leftDt, rightDt, keyL, keyR, lObj, rObj);
             ShowGrid();
@@ -409,8 +583,8 @@ namespace ReportLineOAForDebtAndBranch
             int mismatch = CountStatus("❌ Mismatch");
             int notFound = total - match - mismatch;
             lblSummary.Text =
-                $"Table Data: [{lDb}].{lObj}  vs  [{rDb}].{rObj}   " +
-                $"Total: {total}   ✅ Match: {match}   ❌ Mismatch: {mismatch}   ⚠ Not Found: {notFound}";
+                $"Table Data: {ServerLabel(_leftConnStr)}.[{lDb}].{lObj}  vs  {ServerLabel(_rightConnStr)}.[{rDb}].{rObj}" +
+                $"   Total: {total}   ✅ Match: {match}   ❌ Mismatch: {mismatch}   ⚠ Not Found: {notFound}";
             lblSummary.ForeColor = mismatch + notFound > 0
                 ? Color.FromArgb(255, 130, 130) : Color.FromArgb(100, 220, 100);
         }
@@ -437,8 +611,7 @@ namespace ReportLineOAForDebtAndBranch
             var lCols  = left.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
             var rCols  = right.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
             var common = lCols.Intersect(rCols, StringComparer.OrdinalIgnoreCase)
-                              .Where(c => !c.Equals(keyL, StringComparison.OrdinalIgnoreCase))
-                              .ToList();
+                              .Where(c => !c.Equals(keyL, StringComparison.OrdinalIgnoreCase)).ToList();
             var onlyL  = lCols.Except(rCols, StringComparer.OrdinalIgnoreCase)
                                .Except(new[] { keyL }, StringComparer.OrdinalIgnoreCase).ToList();
             var onlyR  = rCols.Except(lCols, StringComparer.OrdinalIgnoreCase)
@@ -453,14 +626,13 @@ namespace ReportLineOAForDebtAndBranch
                 dt.Columns.Add($"{c} ({rightName})");
                 dt.Columns.Add($"✓ {c}");
             }
-            foreach (var c in onlyL)  dt.Columns.Add($"{c} (Source only)");
-            foreach (var c in onlyR)  dt.Columns.Add($"{c} (Target only)");
+            foreach (var c in onlyL) dt.Columns.Add($"{c} (Source only)");
+            foreach (var c in onlyR) dt.Columns.Add($"{c} (Target only)");
 
             if (hasKey)
             {
                 var rLookup = BuildLookup(right, keyR);
                 var lLookup = BuildLookup(left,  keyL);
-
                 foreach (DataRow lr in left.Rows)
                 {
                     string k = Val(lr, keyL);
@@ -489,7 +661,6 @@ namespace ReportLineOAForDebtAndBranch
                     }
                     dt.Rows.Add(row);
                 }
-                // Rows in right not in left
                 foreach (DataRow rr in right.Rows)
                 {
                     string k = Val(rr, keyR);
@@ -507,17 +678,17 @@ namespace ReportLineOAForDebtAndBranch
                 int max = Math.Max(left.Rows.Count, right.Rows.Count);
                 for (int i = 0; i < max; i++)
                 {
-                    var row  = dt.NewRow();
-                    bool hasL2 = i < left.Rows.Count;
-                    bool hasR2 = i < right.Rows.Count;
-                    if (!hasL2)
+                    var row   = dt.NewRow();
+                    bool hasL = i < left.Rows.Count;
+                    bool hasR = i < right.Rows.Count;
+                    if (!hasL)
                     {
                         row["Status"] = "⚠ Not in Source";
                         foreach (var c in common) row[$"{c} ({rightName})"] = Val(right.Rows[i], c);
                         foreach (var c in onlyR)  row[$"{c} (Target only)"] = Val(right.Rows[i], c);
                         dt.Rows.Add(row); continue;
                     }
-                    if (!hasR2)
+                    if (!hasR)
                     {
                         row["Status"] = "⚠ Not in Target";
                         foreach (var c in common) row[$"{c} ({leftName})"] = Val(left.Rows[i], c);
@@ -544,17 +715,18 @@ namespace ReportLineOAForDebtAndBranch
             return dt;
         }
 
-        // ── Table Structure Compare ──────────────────────────────────────────────
+        // ── Table Structure Compare ───────────────────────────────────────────────
 
         private async Task CompareStructureAsync()
         {
             var (lDb, lSch, lObj) = Left;
             var (rDb, rSch, rObj) = Right;
 
-            using var cn = new SqlConnection(_connectionString);
-            await cn.OpenAsync();
-            var leftCols  = await FetchColumnsAsync(cn, lDb, lSch, lObj);
-            var rightCols = await FetchColumnsAsync(cn, rDb, rSch, rObj);
+            using var lCn = new SqlConnection(_leftConnStr);  await lCn.OpenAsync();
+            using var rCn = new SqlConnection(_rightConnStr); await rCn.OpenAsync();
+
+            var leftCols  = await FetchColumnsAsync(lCn, lDb, lSch, lObj);
+            var rightCols = await FetchColumnsAsync(rCn, rDb, rSch, rObj);
 
             _result = BuildStructureCompare(leftCols, rightCols, lObj, rObj);
             ShowGrid();
@@ -564,27 +736,23 @@ namespace ReportLineOAForDebtAndBranch
             int onlyL = CountStatus("⚠ Source only");
             int onlyR = CountStatus("⚠ Target only");
             lblSummary.Text =
-                $"Structure: [{lDb}].{lObj}  vs  [{rDb}].{rObj}   " +
-                $"✅ Same: {same}   ❌ Different: {diff}   ⚠ Source only: {onlyL}   ⚠ Target only: {onlyR}";
+                $"Structure: {ServerLabel(_leftConnStr)}.[{lDb}].{lObj}  vs  {ServerLabel(_rightConnStr)}.[{rDb}].{rObj}" +
+                $"   ✅ Same: {same}   ❌ Different: {diff}   ⚠ Source only: {onlyL}   ⚠ Target only: {onlyR}";
             lblSummary.ForeColor = diff + onlyL + onlyR > 0
                 ? Color.FromArgb(255, 130, 130) : Color.FromArgb(100, 220, 100);
         }
 
         private static async Task<DataTable> FetchColumnsAsync(SqlConnection cn, string db, string sch, string tbl)
         {
-            string s = sch.Replace("'", "''");
-            string t = tbl.Replace("'", "''");
+            string s = sch.Replace("'", "''"); string t = tbl.Replace("'", "''");
             string sql = $@"
 SELECT COLUMN_NAME, DATA_TYPE,
   ISNULL(CAST(CHARACTER_MAXIMUM_LENGTH AS VARCHAR(10)),'') AS MAX_LEN,
   ISNULL(CAST(NUMERIC_PRECISION AS VARCHAR(10)),'')        AS NUM_P,
   ISNULL(CAST(NUMERIC_SCALE     AS VARCHAR(10)),'')        AS NUM_S,
-  IS_NULLABLE,
-  ISNULL(COLUMN_DEFAULT,'') AS COL_DEFAULT,
-  ORDINAL_POSITION
+  IS_NULLABLE, ISNULL(COLUMN_DEFAULT,'') AS COL_DEFAULT, ORDINAL_POSITION
 FROM [{db}].INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA='{s}' AND TABLE_NAME='{t}'
-ORDER BY ORDINAL_POSITION";
+WHERE TABLE_SCHEMA='{s}' AND TABLE_NAME='{t}' ORDER BY ORDINAL_POSITION";
             var dt = new DataTable();
             using var da = new SqlDataAdapter(sql, cn);
             await Task.Run(() => da.Fill(dt));
@@ -623,23 +791,21 @@ ORDER BY ORDINAL_POSITION";
                 bool hasR = rIdx.TryGetValue(col, out var rc);
                 var row   = dt.NewRow();
                 row["Column Name"] = col;
-
                 if (!hasL) { row["Status"] = "⚠ Target only"; dt.Rows.Add(row); continue; }
                 if (!hasR) { row["Status"] = "⚠ Source only"; dt.Rows.Add(row); continue; }
 
                 string lType = FormatType(lc!), rType = FormatType(rc!);
                 string lNull = lc!["IS_NULLABLE"].ToString()!, rNull = rc!["IS_NULLABLE"].ToString()!;
                 string lDef  = lc["COL_DEFAULT"].ToString()!,  rDef  = rc["COL_DEFAULT"].ToString()!;
-                string lOrd  = lc["ORDINAL_POSITION"].ToString()!, rOrd = rc["ORDINAL_POSITION"].ToString()!;
+                bool typeOk  = string.Equals(lType, rType, StringComparison.OrdinalIgnoreCase);
+                bool nullOk  = string.Equals(lNull, rNull, StringComparison.OrdinalIgnoreCase);
+                bool defOk   = string.Equals(lDef,  rDef,  StringComparison.OrdinalIgnoreCase);
 
-                bool typeOk = string.Equals(lType, rType, StringComparison.OrdinalIgnoreCase);
-                bool nullOk = string.Equals(lNull, rNull, StringComparison.OrdinalIgnoreCase);
-                bool defOk  = string.Equals(lDef,  rDef,  StringComparison.OrdinalIgnoreCase);
-
-                row[$"DataType ({leftName})"]  = lType;  row[$"DataType ({rightName})"]  = rType;  row["✓ Type"]    = typeOk ? "✅" : "❌";
-                row[$"Nullable ({leftName})"]  = lNull;  row[$"Nullable ({rightName})"]  = rNull;  row["✓ Nullable"] = nullOk ? "✅" : "❌";
-                row[$"Default ({leftName})"]   = lDef;   row[$"Default ({rightName})"]   = rDef;   row["✓ Default"]  = defOk  ? "✅" : "❌";
-                row[$"Ordinal ({leftName})"]   = lOrd;   row[$"Ordinal ({rightName})"]   = rOrd;
+                row[$"DataType ({leftName})"]  = lType;  row[$"DataType ({rightName})"]  = rType;  row["✓ Type"]     = typeOk ? "✅" : "❌";
+                row[$"Nullable ({leftName})"]  = lNull;  row[$"Nullable ({rightName})"]  = rNull;  row["✓ Nullable"]  = nullOk ? "✅" : "❌";
+                row[$"Default ({leftName})"]   = lDef;   row[$"Default ({rightName})"]   = rDef;   row["✓ Default"]   = defOk  ? "✅" : "❌";
+                row[$"Ordinal ({leftName})"]   = lc["ORDINAL_POSITION"].ToString()!;
+                row[$"Ordinal ({rightName})"]  = rc["ORDINAL_POSITION"].ToString()!;
                 row["Status"] = (typeOk && nullOk && defOk) ? "✅ Same" : "❌ Different";
                 dt.Rows.Add(row);
             }
@@ -659,25 +825,24 @@ ORDER BY ORDINAL_POSITION";
             return t;
         }
 
-        // ── Stored Procedure Compare ─────────────────────────────────────────────
+        // ── Stored Procedure Compare ──────────────────────────────────────────────
 
         private async Task CompareProcAsync()
         {
             var (lDb, lSch, lObj) = Left;
             var (rDb, rSch, rObj) = Right;
 
-            using var cn = new SqlConnection(_connectionString);
-            await cn.OpenAsync();
-            string? leftDef  = await FetchProcDefAsync(cn, lDb, lSch, lObj);
-            string? rightDef = await FetchProcDefAsync(cn, rDb, rSch, rObj);
+            using var lCn = new SqlConnection(_leftConnStr);  await lCn.OpenAsync();
+            using var rCn = new SqlConnection(_rightConnStr); await rCn.OpenAsync();
+
+            string? leftDef  = await FetchProcDefAsync(lCn, lDb, lSch, lObj);
+            string? rightDef = await FetchProcDefAsync(rCn, rDb, rSch, rObj);
 
             if (leftDef == null && rightDef == null)
-            {
-                lblSummary.Text = "Neither procedure was found.";
-                return;
-            }
+            { lblSummary.Text = "Neither procedure was found."; return; }
 
-            ShowDiff(leftDef ?? "(procedure not found)", rightDef ?? "(procedure not found)", lObj, rObj, lDb, rDb);
+            ShowDiff(leftDef ?? "(procedure not found)", rightDef ?? "(procedure not found)",
+                lObj, rObj, lDb, rDb);
         }
 
         private static async Task<string?> FetchProcDefAsync(SqlConnection cn, string db, string sch, string proc)
@@ -696,58 +861,37 @@ ORDER BY ORDINAL_POSITION";
             var ops    = ComputeDiff(lLines, rLines);
 
             txtDiff.Clear();
-            // Header
-            AppendDiff($"--- Source: [{leftDb}].{leftName}\n",  Color.FromArgb(150, 150, 210));
-            AppendDiff($"+++ Target: [{rightDb}].{rightName}\n", Color.FromArgb(150, 210, 150));
+            AppendDiff($"--- Source: {ServerLabel(_leftConnStr)}.[{leftDb}].{leftName}\n",  Color.FromArgb(150, 150, 210));
+            AppendDiff($"+++ Target: {ServerLabel(_rightConnStr)}.[{rightDb}].{rightName}\n", Color.FromArgb(150, 210, 150));
             AppendDiff("\n", Color.FromArgb(212, 212, 212));
 
             foreach (var (op, line) in ops)
             {
-                Color bg = op switch
-                {
-                    '+' => Color.FromArgb(20, 60, 20),
-                    '-' => Color.FromArgb(70, 20, 20),
-                    _   => Color.FromArgb(20, 20, 20)
-                };
-                Color fg = op switch
-                {
-                    '+' => Color.FromArgb(140, 230, 140),
-                    '-' => Color.FromArgb(230, 130, 130),
-                    _   => Color.FromArgb(212, 212, 212)
-                };
-                string prefix = op switch { '+' => "+ ", '-' => "- ", _ => "  " };
-                AppendDiff(prefix + line + "\n", fg, bg);
+                Color bg = op switch { '+' => Color.FromArgb(20, 60, 20), '-' => Color.FromArgb(70, 20, 20), _ => Color.FromArgb(20, 20, 20) };
+                Color fg = op switch { '+' => Color.FromArgb(140, 230, 140), '-' => Color.FromArgb(230, 130, 130), _ => Color.FromArgb(212, 212, 212) };
+                AppendDiff((op switch { '+' => "+ ", '-' => "- ", _ => "  " }) + line + "\n", fg, bg);
             }
 
             int adds = ops.Count(o => o.op == '+');
             int dels = ops.Count(o => o.op == '-');
-
-            txtDiff.Visible     = true;
-            grid.Visible        = false;
-            btnExportCsv.Enabled  = false;
-            btnExportXlsx.Enabled = false;
-
+            txtDiff.Visible = true; grid.Visible = false;
+            btnExportXlsx.Enabled = btnExportCsv.Enabled = false;
             bool identical = adds == 0 && dels == 0;
             lblSummary.Text = identical
-                ? $"Stored Procedure: {leftName}  vs  {rightName}   ✅ Identical"
-                : $"Stored Procedure: {leftName}  vs  {rightName}   ❌ +{adds} lines added  -{dels} lines removed";
-            lblSummary.ForeColor = identical
-                ? Color.FromArgb(100, 220, 100) : Color.FromArgb(255, 130, 130);
+                ? $"Procedure: {leftName}  vs  {rightName}   ✅ Identical"
+                : $"Procedure: {leftName}  vs  {rightName}   ❌ +{adds} added  -{dels} removed";
+            lblSummary.ForeColor = identical ? Color.FromArgb(100, 220, 100) : Color.FromArgb(255, 130, 130);
         }
 
-        // Myers-style LCS diff — fallback to simple for very large inputs
         private static List<(char op, string line)> ComputeDiff(string[] a, string[] b)
         {
             if (a.Length > 800 || b.Length > 800) return SimpleDiff(a, b);
-
             int m = a.Length, n = b.Length;
             int[,] lcs = new int[m + 1, n + 1];
             for (int i = m - 1; i >= 0; i--)
                 for (int j = n - 1; j >= 0; j--)
                     lcs[i, j] = string.Equals(a[i], b[j], StringComparison.Ordinal)
-                        ? lcs[i + 1, j + 1] + 1
-                        : Math.Max(lcs[i + 1, j], lcs[i, j + 1]);
-
+                        ? lcs[i + 1, j + 1] + 1 : Math.Max(lcs[i + 1, j], lcs[i, j + 1]);
             var result = new List<(char, string)>();
             int ai = 0, bi = 0;
             while (ai < m || bi < n)
@@ -787,9 +931,7 @@ ORDER BY ORDINAL_POSITION";
             grid.DataSource   = _result;
             grid.Visible      = true;
             txtDiff.Visible   = false;
-            btnExportCsv.Enabled  = true;
-            btnExportXlsx.Enabled = true;
-            // Widen Status column, narrow check columns
+            btnExportCsv.Enabled = btnExportXlsx.Enabled = true;
             if (grid.Columns.Contains("Status")) grid.Columns["Status"]!.Width = 140;
             foreach (DataGridViewColumn col in grid.Columns)
                 if (col.Name.StartsWith("✓ ")) col.Width = 38;
@@ -802,13 +944,13 @@ ORDER BY ORDINAL_POSITION";
             string status = drv.Row["Status"]?.ToString() ?? "";
             grid.Rows[e.RowIndex].DefaultCellStyle.BackColor = status switch
             {
-                "✅ Match" or "✅ Same"           => Color.FromArgb(18, 50, 22),
-                "❌ Mismatch" or "❌ Different"   => Color.FromArgb(62, 18, 18),
-                _                                 => Color.FromArgb(55, 44, 18)
+                "✅ Match" or "✅ Same"          => Color.FromArgb(18, 50, 22),
+                "❌ Mismatch" or "❌ Different"  => Color.FromArgb(62, 18, 18),
+                _                                => Color.FromArgb(55, 44, 18)
             };
         }
 
-        // ── Export ───────────────────────────────────────────────────────────────
+        // ── Export ────────────────────────────────────────────────────────────────
 
         private void ExportCsv()
         {
@@ -843,9 +985,9 @@ ORDER BY ORDINAL_POSITION";
                 string status = _result.Rows[r]["Status"]?.ToString() ?? "";
                 var bg = status switch
                 {
-                    "✅ Match" or "✅ Same"         => XLColor.FromArgb(198, 239, 206),
-                    "❌ Mismatch" or "❌ Different" => XLColor.FromArgb(255, 199, 206),
-                    _                               => XLColor.FromArgb(255, 235, 156)
+                    "✅ Match" or "✅ Same"          => XLColor.FromArgb(198, 239, 206),
+                    "❌ Mismatch" or "❌ Different"  => XLColor.FromArgb(255, 199, 206),
+                    _                                => XLColor.FromArgb(255, 235, 156)
                 };
                 for (int c = 0; c < _result.Columns.Count; c++)
                 {
@@ -862,21 +1004,26 @@ ORDER BY ORDINAL_POSITION";
             MessageBox.Show("Exported!", "Done", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
-        // ── Misc Helpers ─────────────────────────────────────────────────────────
+        // ── Misc Helpers ──────────────────────────────────────────────────────────
 
         private int CountStatus(string status) =>
             _result?.AsEnumerable().Count(r => r["Status"].ToString() == status) ?? 0;
 
         private static string Val(DataRow row, string col)
         {
-            try { return row[col]?.ToString() ?? ""; }
-            catch { return ""; }
+            try { return row[col]?.ToString() ?? ""; } catch { return ""; }
         }
 
         private static Dictionary<string, DataRow> BuildLookup(DataTable dt, string keyCol) =>
             dt.AsEnumerable()
               .GroupBy(r => Val(r, keyCol), StringComparer.OrdinalIgnoreCase)
               .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        private static string ServerLabel(string cs)
+        {
+            try { return new SqlConnectionStringBuilder(cs).DataSource; }
+            catch { return "?"; }
+        }
 
         private static RadioButton MakeRdo(string text, int x, int y) => new RadioButton
         {
@@ -924,5 +1071,12 @@ ORDER BY ORDINAL_POSITION";
         private static string Esc(string s) =>
             s.Contains(',') || s.Contains('"') || s.Contains('\n')
                 ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
+    }
+
+    // Extension to set ToolTip text on a control without storing a ToolTip component
+    internal static class ControlExtensions
+    {
+        private static readonly ToolTip _tip = new ToolTip();
+        public static void ToolTip(this Control c, string text) => _tip.SetToolTip(c, text);
     }
 }
