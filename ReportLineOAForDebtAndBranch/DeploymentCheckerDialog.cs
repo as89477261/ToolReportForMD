@@ -123,20 +123,19 @@ namespace ReportLineOAForDebtAndBranch
             BuildListPanel(split.Panel1);
             BuildScriptPanel(split.Panel2);
 
-            split.Load += (s, e) =>
-            {
-                split.Panel1MinSize = 380;
-                split.Panel2MinSize = 340;
-                split.SplitterDistance = Math.Max(380, (int)(split.Width * 0.48));
-            };
-
             SuspendLayout();
             Controls.Add(split);
             Controls.Add(pnlFilter);
             Controls.Add(pnlTop);
             ResumeLayout();
 
-            Load += async (s, e) => await LoadDatabasesAsync();
+            Load += async (s, e) =>
+            {
+                split.Panel1MinSize    = 380;
+                split.Panel2MinSize    = 340;
+                split.SplitterDistance = Math.Max(380, (int)(split.Width * 0.48));
+                await LoadDatabasesAsync();
+            };
         }
 
         private void BuildListPanel(SplitterPanel pnl)
